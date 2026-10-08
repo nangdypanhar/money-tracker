@@ -44,6 +44,22 @@ The service worker (offline support) is only registered in production builds (`p
 To try the app with sample data, switch to **Demo** (More → Data, or **Try demo** on an empty home screen).
 Demo data lives in a separate database, so it never mixes with your own records.
 
+## Install on your phone (PWA)
+
+A phone only installs MoneyTrack as an app from an **https://** address. The LAN dev address
+(`http://192.168.1.x:3000`) is for testing only: no install, no offline mode, no PIN lock.
+
+Deploy the app to any HTTPS host at the root of a domain. It needs no server or database — for example
+[Vercel](https://vercel.com): **Add New → Project → import this GitHub repo → Deploy** (no settings to change).
+Then open the https URL on the phone:
+
+- **Android (Chrome):** More → **Install app** (or browser menu ⋮ → Install app).
+- **iPhone (Safari):** Share → **Add to Home Screen**.
+
+After installing, the app works fully offline. New deployments show **New version ready → Reload**.
+Data belongs to the address it was entered on, so move existing data with **Backup & restore** (export on the
+old address, import on the new one).
+
 ## Architecture
 
 ```
@@ -89,6 +105,10 @@ Detailed rules live in:
 - **Backup** (More → Backup & restore): export/import a JSON file. Restoring replaces all data on the device.
 - **Demo / my data** (More → Data): switch between sample data and your own. **Reset demo** restores the
   samples; **Erase all data** (Backup) starts your own data fresh.
+- **Clear cache & reload** (More): loads the newest app version; data is kept. If a device is stuck on an old
+  version, open `/reset.html` (cache only — it never deletes data).
+- **Reset app — delete everything** (More): deletes all data (yours and the demo), the PIN, and settings, like a
+  fresh install. Can't be undone.
 - **PIN lock** (More → Security): locks on launch and after the chosen time in the background.
 - **Install:** use your browser's "Add to Home Screen" / "Install app".
 

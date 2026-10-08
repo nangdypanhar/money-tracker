@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { DataProvider, useData } from "@/features/data/data-provider";
+import { PwaProvider } from "@/features/pwa/pwa-provider";
 import { LockProvider } from "@/features/security/lock-provider";
 import { TransactionSheetProvider } from "@/features/transactions/transaction-sheet";
 import { BottomNav } from "./bottom-nav";
 import { DemoBanner } from "./demo-banner";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  useServiceWorker();
   return (
+    <PwaProvider>
     <DataProvider>
       <LockProvider>
         <TransactionSheetProvider>
@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </LockProvider>
       <Toaster position="top-center" />
     </DataProvider>
+    </PwaProvider>
   );
 }
 
@@ -43,14 +44,4 @@ function DataGate({ children }: { children: React.ReactNode }) {
       {children}
     </>
   );
-}
-
-/** Offline support. Only in production so dev builds aren't served stale from cache. */
-function useServiceWorker() {
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => {
-      // Offline caching is an enhancement; the app works without it.
-    });
-  }, []);
 }

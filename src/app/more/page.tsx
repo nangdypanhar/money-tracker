@@ -3,6 +3,8 @@
 import {
   ChartNoAxesCombined,
   ChevronRight,
+  Download,
+  Share,
   DatabaseBackup,
   Gauge,
   Landmark,
@@ -18,8 +20,10 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { Panel, Segmented } from "@/components/finance/primitives";
+import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/app/form";
 import { useData } from "@/features/data/data-provider";
+import { usePwa } from "@/features/pwa/pwa-provider";
 import { useLock } from "@/features/security/lock-provider";
 import { clearAppCacheAndReload, resetEverything } from "@/lib/app-cache";
 import { deleteDb } from "@/lib/db/idb";
@@ -39,6 +43,7 @@ export default function MorePage() {
   const { security, lockNow } = useLock();
   const { theme = "system", setTheme } = useTheme();
   const { mode } = useData();
+  const pwa = usePwa();
   const { confirm, dialog } = useConfirm();
 
   async function resetApp() {
@@ -67,6 +72,40 @@ export default function MorePage() {
   return (
     <main className="flex flex-col gap-5 px-4">
       <ScreenHeader title="More" className="px-0" />
+
+      {!pwa.isInstalled && (
+        <Panel className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+              <Download className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Install MoneyTrack</p>
+              <p className="text-xs text-muted-foreground">Open it from your home screen and use it offline.</p>
+            </div>
+          </div>
+          {!pwa.isSecure ? (
+            <p className="text-xs text-muted-foreground">
+              Installing needs a secure (https://) address. This one isn&apos;t, so your browser can only make a plain
+              shortcut — offline use and the PIN lock won&apos;t work from it.
+            </p>
+          ) : pwa.canInstall ? (
+            <Button onClick={pwa.install} className="h-11 rounded-full">
+              Install app
+            </Button>
+          ) : pwa.isIos ? (
+            <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              In Safari, tap <Share className="inline size-3.5" /> <span className="font-medium text-foreground">Share</span>, then{" "}
+              <span className="font-medium text-foreground">Add to Home Screen</span>.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Open your browser menu (⋮) and choose <span className="font-medium text-foreground">Install app</span> or{" "}
+              <span className="font-medium text-foreground">Add to Home screen</span>.
+            </p>
+          )}
+        </Panel>
+      )}
 
       <Panel className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium">Appearance</span>
@@ -161,6 +200,10 @@ export default function MorePage() {
       <p className="flex items-start gap-2 px-2 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0" />
         Your data stays on this device. Nothing is uploaded — export a backup to keep a copy elsewhere.
+      </p>
+      <p className="text-center text-[10px] text-muted-foreground/70">
+        Version {pwa.version}
+        {pwa.isInstalled && " · installed"}
       </p>
       {dialog}
     </main>

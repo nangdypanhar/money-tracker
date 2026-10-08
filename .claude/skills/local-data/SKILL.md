@@ -22,6 +22,9 @@ backup, so treat every storage change as potentially data-destroying.
   data, seeded once by `seedDemoIfNeeded`). The mode lives in localStorage (`lib/db/mode.ts`) and is read when
   the DB opens. Switching or wiping a database goes through `restartApp()` (full reload) so the data provider
   and PIN lock start over. Never write demo records into the real database, and never set a PIN in demo mode.
+- Clearing: `clearAppCacheAndReload()` removes the service worker + Cache Storage and **keeps** data;
+  `public/reset.html` does the same without the app and must never delete data (it isn't behind the PIN).
+  `resetEverything()` is the only full wipe (both databases, PIN, `moneytrack:*` settings) and is behind a confirm.
 - First-run seeding must stay idempotent (fixed ids + one shared promise): React runs effects twice in dev.
 
 ## 2. Record shape

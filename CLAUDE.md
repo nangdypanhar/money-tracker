@@ -63,6 +63,14 @@ pnpm check:finance   # money-logic invariants (plain Node, no test framework)
 Run `typecheck`, `lint`, and `check:finance` before finishing work that touches money logic; extend
 `scripts/finance-check.ts` when you add a rule. A full test runner (e.g. Vitest) needs the user's approval.
 
+Verification builds: `NEXT_DIST_DIR=.next-verify pnpm build` writes to a separate folder so a running
+`pnpm dev` (which uses `.next`) isn't disturbed — a normal `pnpm build` alongside it can break the dev server.
+Next adds that folder to `tsconfig.json` "include"; revert that change afterwards (`git checkout tsconfig.json`).
+
+PWA: `src/app/manifest.ts`, PNG icons in `public/` + `src/app/apple-icon.png`, `public/sw.js` (registered as
+`/sw.js?v=<NEXT_PUBLIC_APP_VERSION>`, set per build in `next.config.ts`). If you add a route, add it to `ROUTES`
+in `public/sw.js` so it works offline. Installing only works over HTTPS.
+
 `shadcn init` rewrites `src/app/globals.css` and swaps the font to Geist — if it's ever re-run, restore the
 MoneyTrack theme and Poppins afterwards. `shadcn add <component>` is fine once approved.
 
