@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
+import { AppShell } from "@/components/app/app-shell";
+import { ThemeProvider } from "@/components/app/theme-provider";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -16,8 +18,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05050c",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e9edf4" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1424" },
+  ],
+  colorScheme: "light dark",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -29,10 +34,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={poppins.variable}>
-        {/* Phone-width column on larger screens, matching the sample's mobile layout */}
-        <div className="relative mx-auto min-h-dvh w-full max-w-md overflow-x-hidden">{children}</div>
+    // next-themes sets the theme class before hydration, so the server/client class differs by design.
+    <html lang="en" className={poppins.variable} suppressHydrationWarning>
+      <body>
+        <ThemeProvider>
+          <AppShell>{children}</AppShell>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -8,4 +8,4 @@ Suggested naming: `01-dashboard.png`, `02-transactions.png`, `03-add-transaction
 Once added, update the **Design system** section of `/CLAUDE.md` with the tokens and patterns extracted
 from these files (colors, radius, spacing, type scale, navigation, card/list styles, amount colors).
 
-_Status: empty — awaiting sample UI._
+_Status: `image.png` — Monthly budget, Budgeting Breakdown, Report (dark theme). Implemented in `src/app/budget/`._

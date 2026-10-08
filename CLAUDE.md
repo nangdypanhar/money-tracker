@@ -11,8 +11,8 @@ There is **no backend**. All data lives on the device in IndexedDB. The architec
 future Google Drive sync, notifications, and stronger local encryption — but **do not implement those
 integrations unless explicitly asked**.
 
-> **Status:** the repository has not been scaffolded yet, and the sample UI has not been added.
-> Sections marked **TBD** must be filled in once those exist. Do not invent values for them.
+> **Status:** v1 is implemented (all features above, local-only, USD only). Google Drive sync,
+> notifications, and at-rest encryption wait for an explicit request.
 
 ## Tech stack
 
@@ -56,32 +56,47 @@ Package manager: **pnpm**. Node 24 via nvm (`nvm use 24`; Node is not on the def
 pnpm dev         # start dev server
 pnpm build       # production build
 pnpm lint        # ESLint
-pnpm typecheck   # tsc --noEmit
+pnpm typecheck       # tsc --noEmit
+pnpm check:finance   # money-logic invariants (plain Node, no test framework)
 ```
 
-No test runner yet. Adding one (e.g. Vitest) needs the user's approval.
+Run `typecheck`, `lint`, and `check:finance` before finishing work that touches money logic; extend
+`scripts/finance-check.ts` when you add a rule. A full test runner (e.g. Vitest) needs the user's approval.
+
+`shadcn init` rewrites `src/app/globals.css` and swaps the font to Geist — if it's ever re-run, restore the
+MoneyTrack theme and Poppins afterwards. `shadcn add <component>` is fine once approved.
 
 ## Architecture
 
-Planned layout (adjust this section to match reality once scaffolded):
-
 ```
 src/
-  app/                    # Next.js routes (App Router), layouts, manifest
+  app/                    # routes: / (home), /transactions, /budget (+ /breakdown, /report, /limits),
+                          # /more, /accounts, /goals, /categories, /backup, /security; manifest.ts
   components/
-    ui/                   # shadcn/ui generated components — keep close to upstream
-    <feature>/            # feature-specific presentational components
-  features/               # one folder per domain: accounts, transactions, transfers,
-                          # budgets, goals, reports, backup, security, settings
+    ui/                   # shadcn/ui generated (radix-nova) — keep close to upstream
+    app/                  # shell: AppShell, BottomNav, ScreenHeader, MonthSelector, form helpers
+    finance/              # sample-UI pieces: SpendingGauge, LineChart, StackedBar, chips, TransactionList
+  features/
+    data/                 # DataProvider (loads IndexedDB into React state, shared month), summaries, demo data
+    transactions/         # add/edit transaction drawer (TransactionSheetProvider)
+    security/             # LockProvider + PIN pad
   lib/
-    money/                # Money type, parsing, formatting (integer minor units)
-    finance/              # pure calculations: balances, budgets, reports, goals
-    db/                   # IndexedDB open/migrations + repositories
-    security/             # PIN/lock, Web Crypto helpers, encryption seam
-  integrations/           # future: drive-sync, notifications (interfaces only, when asked)
-public/                   # icons, service worker
-docs/sample-ui/           # the sample UI reference (screenshots/exports)
+    money/                # currency table, integer minor-unit parsing/formatting
+    finance/              # domain types, dates, pure calculations (balances, budgets, goals, reports)
+    db/                   # IndexedDB open + migrations, generic repository, settings, first-run seed
+    backup/               # JSON backup build/validate/restore, CSV export
+    security/             # PBKDF2 PIN hashing
+public/                   # icon, service worker (sw.js, registered in production only)
+scripts/                  # finance-check.ts + loader so Node can run src TypeScript
+docs/sample-ui/           # the sample UI reference
 ```
+
+Demo mode uses a separate IndexedDB database (`moneytrack-demo`); see the `local-data` skill. A banner shows
+while it's active, and switching is on More → Data.
+
+Data flow: pages read `useData()` (all live records in memory — fine for personal-finance volumes), compute
+with `lib/finance`, write through repositories (`lib/db/repositories.ts`), then call `refresh()`.
+Forms open in a bottom `FormDrawer`; destructive actions use `useConfirm()`.
 
 Layering — dependencies only point downward:
 
@@ -110,19 +125,24 @@ app/ (routes)  →  features/ + components/  →  lib/finance (pure)  →  lib/m
 Source: `docs/sample-ui/image.png` (Monthly budget, Budgeting Breakdown, Report). Look at it before any UI
 work. Tokens live as CSS variables in `src/app/globals.css`; use them via Tailwind classes, never raw hex.
 
-**Theme — dark only (for now).**
+**Deliberate changes from the sample (requested by the user):** the accent is **blue**, not the sample's
+purple, and there is a **light theme** as well as dark (System / Light / Dark on the More screen, via
+`next-themes`, class `dark` on `<html>`). Keep the sample's layout, shapes, and patterns in both themes.
+Neither theme uses pure white or near-black — the user found those too bright / too dark.
 
-| Token                | Value (approx.)       | Used for                                                  |
-| -------------------- | --------------------- | --------------------------------------------------------- |
-| `background`         | `#05050c` near-black  | page                                                      |
-| header glow          | radial `#2a2160` → transparent | soft purple glow behind the top header           |
-| `card`               | `#0f0f26` navy        | cards / panels, with subtle top highlight gradient        |
-| `border`             | `#24244a`             | 1px card, chip, and pill borders                          |
-| `primary`            | `#4f3fc4` indigo      | active month pill, active nav item, primary chip          |
-| `muted-foreground`   | `#9a9ab8`             | secondary text ("Completed", "Than last month", info rows)|
-| `income`             | `#2fd47a` green       | `+$13.82`, positive deltas                                |
-| `expense`            | `#f0473e` red         | `-$10.33`, negative deltas, expense status badge          |
-| `chart-1..6`         | blue `#2f6bff`, green `#22c99a`, orange `#f2895f`, cyan `#5ac8e4`, violet `#6a4bff`, amber `#f5a64a` | category dots, bar segments, gauge |
+| Token              | Light       | Dark        | Used for                                                    |
+| ------------------ | ----------- | ----------- | ----------------------------------------------------------- |
+| `background`       | `#e9edf4`   | `#0e1424`   | page                                                        |
+| `card`             | `#f6f8fb`   | `#172036`   | cards / panels (`.surface` adds highlight / soft shadow)     |
+| `border`           | `#d3dae6`   | `#2b3854`   | 1px card, chip, and pill borders                            |
+| `primary`          | `#2a62f0`   | `#3170ff`   | active month pill, active nav item, primary buttons         |
+| `muted-foreground` | `#58647a`   | `#a1adc4`   | secondary text, info rows                                   |
+| `income`           | `#12a058`   | `#2fd47a`   | `+$13.82`, positive deltas                                  |
+| `expense`          | `#d93025`   | `#f0473e`   | `-$10.33`, negative deltas, expense badge                   |
+| `glow`             | `#cbd8f3`   | `#1c3366`   | `.header-glow` radial glow behind the top of each screen    |
+| `chart-1..6`       | blue, green, orange, cyan, violet, amber (slightly deeper in light) | category dots, bars, gauge |
+
+Accent rule: never green or red (reserved for income/expense).
 
 **Type.** Poppins only. Headers ~20px/500, centered. Hero amounts large (~28–32px) and semibold with
 `tabular-nums` (the sample shows monospaced figures; we get aligned digits from Poppins tabular numerals

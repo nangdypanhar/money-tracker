@@ -1,54 +1,99 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /*
- * MoneyTrack theme — taken from docs/sample-ui/image.png (dark only for now).
- * Variable names follow shadcn/ui so generated components pick them up.
+ * MoneyTrack theme. Layout and style follow docs/sample-ui/image.png; the accent was changed from the
+ * sample's purple to blue at the user's request, and a light theme was added.
+ * :root = light, .dark = dark (class set by next-themes). Variable names follow shadcn/ui.
+ * Note: `shadcn init` rewrites this file; re-apply these values if it's ever re-run.
  */
 :root {
-  --radius: 1.25rem;
+  --radius: 0.75rem;
 
-  --background: #05050c;
-  --foreground: #f4f4fb;
-  --card: #0f0f26;
-  --card-foreground: #f4f4fb;
-  --popover: #12122c;
-  --popover-foreground: #f4f4fb;
-  --primary: #4f3fc4;
+  --background: #e9edf4;
+  --foreground: #18202f;
+  --card: #f6f8fb;
+  --card-foreground: #18202f;
+  --popover: #f8fafc;
+  --popover-foreground: #18202f;
+  --primary: #2a62f0;
   --primary-foreground: #ffffff;
-  --secondary: #17173a;
-  --secondary-foreground: #e6e6f5;
-  --muted: #17173a;
-  --muted-foreground: #9a9ab8;
-  --accent: #1d1d45;
-  --accent-foreground: #f4f4fb;
-  --destructive: #f0473e;
-  --border: #24244a;
-  --input: #24244a;
-  --ring: #6a5ae0;
+  --secondary: #dfe5ee;
+  --secondary-foreground: #1f2a3d;
+  --muted: #dde3ec;
+  --muted-foreground: #58647a;
+  --accent: #dbe2ed;
+  --accent-foreground: #18202f;
+  --destructive: #d93025;
+  --border: #d3dae6;
+  --input: #c9d1de;
+  --ring: #2a62f0;
 
-  /* Money semantics */
+  /* Money semantics (darker in light mode for contrast on white) */
+  --income: #12a058;
+  --expense: #d93025;
+
+  /* Category palette (order matters: Category.color indexes into it) */
+  --chart-1: #3b6ff5;
+  --chart-2: #12b386;
+  --chart-3: #ee7a4a;
+  --chart-4: #22acd2;
+  --chart-5: #7454f0;
+  --chart-6: #eda12f;
+
+  /* Soft glow behind the top of each screen, and card elevation */
+  --glow: #cbd8f3;
+  --card-shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 8px 24px -12px rgb(16 24 40 / 0.12);
+}
+
+.dark {
+  --background: #0e1424;
+  --foreground: #eef2f9;
+  --card: #172036;
+  --card-foreground: #eef2f9;
+  --popover: #1b253d;
+  --popover-foreground: #eef2f9;
+  --primary: #3170ff;
+  --primary-foreground: #ffffff;
+  --secondary: #1f2a43;
+  --secondary-foreground: #e2e8f3;
+  --muted: #1f2a43;
+  --muted-foreground: #a1adc4;
+  --accent: #24314d;
+  --accent-foreground: #eef2f9;
+  --destructive: #f0473e;
+  --border: #2b3854;
+  --input: #2b3854;
+  --ring: #5d8dff;
+
   --income: #2fd47a;
   --expense: #f0473e;
 
-  /* Category palette (order matters: Category.color indexes into it) */
-  --chart-1: #2f6bff;
+  --chart-1: #3d7bff;
   --chart-2: #22c99a;
   --chart-3: #f2895f;
   --chart-4: #5ac8e4;
-  --chart-5: #6a4bff;
+  --chart-5: #7a5cff;
   --chart-6: #f5a64a;
 
-  /* Header glow behind the top of each screen */
-  --glow: #2a2160;
+  --glow: #1c3366;
+  --card-shadow: none;
 }
 
 @theme inline {
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
 
-  --radius-sm: calc(var(--radius) - 8px);
-  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -85,8 +130,12 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -95,9 +144,15 @@
 }
 
 @layer utilities {
-  /* Subtle top highlight used on cards in the sample */
+  /* Card fill from the sample: faint top highlight (dark) / soft elevation (light) */
   .surface {
-    background-image: linear-gradient(180deg, color-mix(in oklab, var(--card) 80%, white 6%), var(--card) 40%);
+    background-image: linear-gradient(180deg, color-mix(in oklab, var(--card) 88%, white 6%), var(--card) 45%);
+    box-shadow: var(--card-shadow);
+  }
+
+  /* Purple glow behind the top of each screen */
+  .header-glow {
+    background-image: radial-gradient(120% 60% at 50% 0%, var(--glow) 0%, transparent 70%);
   }
 
   .scrollbar-none {
@@ -105,12 +160,5 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
-  }
-
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .pt-safe {
-    padding-top: env(safe-area-inset-top);
   }
 }

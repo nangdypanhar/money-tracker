@@ -4,10 +4,7 @@ A mobile-first, local-first personal finance **PWA** for tracking income, expens
 accounts, savings goals, and reports — with backups and an app lock. All data stays on your device;
 no account or backend required.
 
-> **Status:** early setup. The project has not been scaffolded yet and the sample UI is pending
-> (`docs/sample-ui/`). Sections marked **TBD** will be filled in as the project takes shape.
-
-## Features (planned)
+## Features
 
 - **Accounts** — cash, bank, e-wallet, credit; opening balances; archive
 - **Transactions** — income and expenses with categories, notes, and dates
@@ -40,22 +37,27 @@ pnpm dev         # start the dev server at http://localhost:3000
 pnpm build       # production build
 pnpm lint        # lint
 pnpm typecheck   # type-check
+pnpm check:finance  # verify money calculations
 ```
+
+The service worker (offline support) is only registered in production builds (`pnpm build && pnpm start`).
+To try the app with sample data, switch to **Demo** (More → Data, or **Try demo** on an empty home screen).
+Demo data lives in a separate database, so it never mixes with your own records.
 
 ## Architecture
 
 ```
-src/
-  app/            Next.js routes, layouts, manifest
-  components/ui/  shadcn/ui components
-  components/     feature UI components
-  features/       domain modules (accounts, transactions, budgets, goals, reports, backup, security)
-  lib/money/      money type & formatting (integer minor units)
-  lib/finance/    pure calculations (balances, budgets, goals, reports)
-  lib/db/         IndexedDB setup, migrations, repositories
-  lib/security/   app lock & crypto helpers
-public/           icons, service worker
-docs/sample-ui/   visual reference for the UI
+src/app/            screens (home, history, budget, breakdown, report, accounts, goals, …)
+src/components/ui/  shadcn/ui components
+src/components/     app shell and finance UI (gauge, charts, transaction list)
+src/features/       data provider, transaction drawer, PIN lock
+src/lib/money/      money parsing & formatting (integer minor units)
+src/lib/finance/    pure calculations (balances, budgets, goals, reports)
+src/lib/db/         IndexedDB setup, migrations, repositories
+src/lib/backup/     JSON backup/restore, CSV export
+src/lib/security/   PIN hashing (Web Crypto)
+public/             icon, service worker
+docs/sample-ui/     visual reference for the UI
 ```
 
 Key principles:
@@ -74,8 +76,21 @@ Detailed rules live in:
 
 ## Usage
 
-**TBD** — will describe adding accounts, recording transactions/transfers, setting budgets and goals,
-viewing reports, backing up/restoring, enabling the app lock, and installing the PWA.
+- **Add a transaction:** the **+** button (Home or History) or the Expense / Income / Transfer shortcuts.
+  Tap any transaction to edit or delete it.
+- **History calendar:** each day shows what you spent (green dot = income). Tap a day to see only that day;
+  **+** then adds a transaction on that date.
+- **Transfers** move money between your accounts. An optional fee is recorded as a separate expense.
+- **Accounts** (More → Accounts): set an opening balance, archive old accounts, or *Adjust balance* to match
+  your bank — adjustments never count as income or spending.
+- **Budgets** (Budget tab → ⚙): a monthly spending limit plus optional per-category limits.
+- **Savings goals** (More → Savings goals): add or withdraw money; it moves between an account and the goal.
+- **Reports** (Budget → Report): income by category, cash flow, savings rate; **Download** exports the month as CSV.
+- **Backup** (More → Backup & restore): export/import a JSON file. Restoring replaces all data on the device.
+- **Demo / my data** (More → Data): switch between sample data and your own. **Reset demo** restores the
+  samples; **Erase all data** (Backup) starts your own data fresh.
+- **PIN lock** (More → Security): locks on launch and after the chosen time in the background.
+- **Install:** use your browser's "Add to Home Screen" / "Install app".
 
 ## Privacy
 

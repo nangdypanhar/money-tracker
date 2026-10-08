@@ -3,7 +3,8 @@
  * See .claude/skills/local-data/SKILL.md before changing the schema.
  */
 
-export const DB_NAME = "moneytrack";
+import { DB_NAMES, getDataMode } from "./mode";
+
 export const DB_VERSION = 1;
 
 export const STORES = [
@@ -46,6 +47,11 @@ const migrations: Migration[] = [
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/** Database for the current mode (real or demo); read once per page load. */
+export function currentDbName(): string {
+  return DB_NAMES[getDataMode()];
+}
+
 export function openDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
     return Promise.reject(new Error("IndexedDB is not available (server render or unsupported browser)."));
@@ -53,7 +59,7 @@ export function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(currentDbName(), DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = request.result;
@@ -82,6 +88,22 @@ export function openDb(): Promise<IDBDatabase> {
   });
 
   return dbPromise;
+}
+
+/** Close and delete a database (used to reset demo data). Resolves once it's gone. */
+export async function deleteDb(name: string): Promise<void> {
+  if (dbPromise && name === currentDbName()) {
+    const db = await dbPromise;
+    db.onversionchange = null;
+    db.close();
+    dbPromise = null;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("Close MoneyTrack in other tabs and try again."));
+  });
 }
 
 export function promisify<T>(request: IDBRequest<T>): Promise<T> {

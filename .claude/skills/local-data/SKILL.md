@@ -17,7 +17,12 @@ backup, so treat every storage change as potentially data-destroying.
 - Access IndexedDB on the client only (guard for SSR — no `indexedDB` during server render).
 - Multi-record writes that must stay consistent (e.g. a transfer + its fee, deleting an account's data)
   happen in **one transaction**.
-- `localStorage` is only for non-sensitive UI preferences (e.g. last tab). Financial data never goes there.
+- `localStorage` is only for non-sensitive UI preferences (theme, data mode). Financial data never goes there.
+- **Real vs. demo:** two separate databases — `moneytrack` (the user's data) and `moneytrack-demo` (sample
+  data, seeded once by `seedDemoIfNeeded`). The mode lives in localStorage (`lib/db/mode.ts`) and is read when
+  the DB opens. Switching or wiping a database goes through `restartApp()` (full reload) so the data provider
+  and PIN lock start over. Never write demo records into the real database, and never set a PIN in demo mode.
+- First-run seeding must stay idempotent (fixed ids + one shared promise): React runs effects twice in dev.
 
 ## 2. Record shape
 

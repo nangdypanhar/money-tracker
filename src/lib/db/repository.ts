@@ -1,4 +1,5 @@
 import type { BaseRecord } from "@/lib/finance/types";
+import { newId } from "@/lib/id";
 import { openDb, promisify, type StoreName, withTransaction } from "./idb";
 
 /** Omit that keeps discriminated unions (e.g. Transaction) intact. */
@@ -32,7 +33,7 @@ export function createRepository<T extends BaseRecord>(store: StoreName) {
       const timestamp = now();
       return {
         ...input,
-        id: input.id ?? crypto.randomUUID(),
+        id: input.id ?? newId(),
         createdAt: timestamp,
         updatedAt: timestamp,
       } as unknown as T;

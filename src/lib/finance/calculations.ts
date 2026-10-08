@@ -197,3 +197,22 @@ export function transferTotals(
 export function savingsRate(income: Minor, expenses: Minor): number | null {
   return income > 0 ? (income - expenses) / income : null;
 }
+
+export interface DayTotals {
+  income: Minor;
+  /** Spending net of refunds (can be negative on a refund-only day). */
+  expenses: Minor;
+}
+
+/** Income and spending per local date. Same exclusions as the monthly totals (no transfers, goals, adjustments). */
+export function dailyTotals(transactions: readonly Transaction[], range: DateRange): Map<string, DayTotals> {
+  const days = new Map<string, DayTotals>();
+  for (const t of inPeriod(transactions, range)) {
+    if (t.type !== "income" && t.type !== "expense") continue;
+    const day = days.get(t.date) ?? { income: 0, expenses: 0 };
+    if (t.type === "income") day.income += t.amount;
+    else day.expenses += spendingOf(t);
+    days.set(t.date, day);
+  }
+  return days;
+}
