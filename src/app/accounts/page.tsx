@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AmountInput, Field, FormDrawer, useConfirm } from "@/components/app/form";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { ACCOUNT_ICONS } from "@/components/finance/category-icon";
-import { InfoRow, Panel } from "@/components/finance/primitives";
+import { InfoRow, Panel, Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +16,7 @@ import { accountsRepo, transactionsRepo } from "@/lib/db/repositories";
 import { accountBalance } from "@/lib/finance/calculations";
 import { toLocalDate, toLocalTime } from "@/lib/finance/dates";
 import type { Account, AccountKind } from "@/lib/finance/types";
+import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/money/currency";
 import { formatMoney, parseAmount, sumMinor, toInputString } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
 
@@ -27,15 +28,18 @@ const KINDS: { value: AccountKind; label: string }[] = [
 ];
 
 export default function AccountsPage() {
-  const { data } = useData();
+  const { data, currencies } = useData();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
-  const { currency } = data.settings;
 
   const rows = useMemo(
     () => data.accounts.map((a) => ({ account: a, balance: accountBalance(a, data.transactions, data.goalEntries) })),
     [data.accounts, data.transactions, data.goalEntries],
   );
-  const total = sumMinor(rows.filter((r) => !r.account.archived && r.account.currency === currency).map((r) => r.balance));
+  // One total per currency — dollars and riel are never added together.
+  const totals = (currencies.length ? currencies : [data.settings.currency]).map((code) => ({
+    code,
+    total: sumMinor(rows.filter((r) => !r.account.archived && r.account.currency === code).map((r) => r.balance)),
+  }));
 
   return (
     <main className="flex flex-col gap-5 px-4">
@@ -52,7 +56,11 @@ export default function AccountsPage() {
 
       <Panel>
         <p className="text-sm text-foreground/90">Total across accounts</p>
-        <p className="text-3xl font-semibold tabular-nums">{formatMoney(total, currency)}</p>
+        {totals.map(({ code, total }, i) => (
+          <p key={code} className={cn("font-semibold tabular-nums", i === 0 ? "text-3xl" : "mt-1 text-xl")}>
+            {formatMoney(total, code)}
+          </p>
+        ))}
         <InfoRow className="mt-2">Money in savings goals is shown on the Savings goals screen.</InfoRow>
       </Panel>
 
@@ -98,9 +106,9 @@ export default function AccountsPage() {
 }
 
 function AccountForm({ account, balance, onDone }: { account: Account | null; balance: number; onDone: () => void }) {
-  const { data, refresh } = useData();
+  const { data, refresh, currency: viewCurrency } = useData();
   const { confirm, dialog } = useConfirm();
-  const currency = account?.currency ?? data.settings.currency;
+  const [currency, setCurrency] = useState<CurrencyCode>(account?.currency ?? viewCurrency);
   const [name, setName] = useState(account?.name ?? "");
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? "bank");
   const [opening, setOpening] = useState(account ? toInputString(account.openingBalance, currency) : "");
@@ -123,7 +131,8 @@ function AccountForm({ account, balance, onDone }: { account: Account | null; ba
 
     try {
       if (account) {
-        await accountsRepo.update({ ...account, name: name.trim(), kind, openingBalance, archived });
+        // Currency can only change while the account has no history (amounts would change meaning).
+        await accountsRepo.update({ ...account, name: name.trim(), kind, openingBalance, archived, currency: used ? account.currency : currency });
       } else {
         await accountsRepo.create({ name: name.trim(), kind, currency, openingBalance, archived: false });
       }
@@ -170,6 +179,19 @@ function AccountForm({ account, balance, onDone }: { account: Account | null; ba
     <form onSubmit={save} className="flex flex-col gap-4">
       <Field label="Name" htmlFor="acc-name">
         <Input id="acc-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
+      </Field>
+      <Field
+        label="Currency"
+        hint={used ? "This account has transactions, so its currency can't change." : "Dollar and riel accounts are tracked separately."}
+      >
+        <Segmented
+          value={currency}
+          onChange={(next: CurrencyCode) => !used && setCurrency(next)}
+          options={CURRENCY_CODES.filter((code) => !used || code === currency).map((code) => ({
+            value: code,
+            label: `${CURRENCIES[code].symbol} ${CURRENCIES[code].short}`,
+          }))}
+        />
       </Field>
       <Field label="Type">
         <Select value={kind} onValueChange={(v) => setKind(v as AccountKind)}>

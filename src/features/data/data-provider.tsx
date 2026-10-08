@@ -11,7 +11,10 @@ import {
 } from "@/lib/db/repositories";
 import { type DataMode, getDataMode } from "@/lib/db/mode";
 import { seedIfNeeded } from "@/lib/db/seed";
-import { type AppSettings, DEFAULT_APP_SETTINGS, getSetting } from "@/lib/db/settings";
+import { type AppSettings, DEFAULT_APP_SETTINGS, getSetting, normalizeAppSettings } from "@/lib/db/settings";
+import { CURRENCY_CODES, type CurrencyCode, isCurrencyCode } from "@/lib/money/currency";
+
+const CHART_CURRENCY_KEY = "moneytrack:chart-currency";
 import { type MonthKey, monthKey } from "@/lib/finance/dates";
 import { seedDemoIfNeeded } from "./demo-data";
 import type { Account, Budget, Category, Goal, GoalEntry, Transaction } from "@/lib/finance/types";
@@ -39,6 +42,16 @@ interface DataContextValue {
   categoryById: Map<string, Category>;
   /** Which database is open: the user's real data or the demo. */
   mode: DataMode;
+  /** Default currency for new accounts/goals. */
+  currency: CurrencyCode;
+  /**
+   * Currencies with at least one active account, dollar first then riel (ABA style: each shown in its own
+   * block, never added together).
+   */
+  currencies: CurrencyCode[];
+  /** Currency shown on the chart screens (Budget, Breakdown, Report) — one at a time via a $/៛ tab. */
+  chartCurrency: CurrencyCode;
+  setChartCurrency: (currency: CurrencyCode) => void;
 }
 
 const EMPTY: AppData = {
@@ -76,7 +89,7 @@ async function loadAll(): Promise<AppData> {
     budgets,
     goals: goals.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     goalEntries: goalEntries.sort((a, b) => b.date.localeCompare(a.date)),
-    settings: { ...DEFAULT_APP_SETTINGS, ...settings },
+    settings: normalizeAppSettings(settings),
   };
 }
 
@@ -115,6 +128,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const currencies = useMemo(() => {
+    const used = new Set(data.accounts.filter((a) => !a.archived).map((a) => a.currency));
+    const ordered = CURRENCY_CODES.filter((code) => used.has(code));
+    return ordered.length ? ordered : [data.settings.currency];
+  }, [data.accounts, data.settings.currency]);
+  const currency = data.settings.currency;
+  // Remembered on this device (a UI preference, like the theme) so it survives reloads and app restarts.
+  const [chosenChartCurrency, setChosenChartCurrency] = useState<CurrencyCode | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const saved = localStorage.getItem(CHART_CURRENCY_KEY);
+      return saved && isCurrencyCode(saved) ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const setChartCurrency = useCallback((next: CurrencyCode) => {
+    setChosenChartCurrency(next);
+    try {
+      localStorage.setItem(CHART_CURRENCY_KEY, next);
+    } catch {
+      // Storage blocked: the choice still applies until reload.
+    }
+  }, []);
+  const chartCurrency = chosenChartCurrency && currencies.includes(chosenChartCurrency) ? chosenChartCurrency : currencies[0];
+
   const value = useMemo<DataContextValue>(
     () => ({
       data,
@@ -126,8 +165,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       accountById: new Map(data.accounts.map((a) => [a.id, a])),
       categoryById: new Map(data.categories.map((c) => [c.id, c])),
       mode,
+      currency,
+      currencies,
+      chartCurrency,
+      setChartCurrency,
     }),
-    [data, ready, error, refresh, month, mode],
+    [data, ready, error, refresh, month, mode, currency, currencies, chartCurrency, setChartCurrency],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

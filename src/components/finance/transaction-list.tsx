@@ -2,7 +2,7 @@
 
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Equal } from "lucide-react";
 import { useData } from "@/features/data/data-provider";
-import { parseLocalDate, toLocalDate } from "@/lib/finance/dates";
+import { formatTime12, parseLocalDate, toLocalDate } from "@/lib/finance/dates";
 import type { Transaction } from "@/lib/finance/types";
 import { formatMoney } from "@/lib/money/money";
 import type { CurrencyCode } from "@/lib/money/currency";
@@ -45,7 +45,11 @@ function useRowView(t: Transaction): RowView {
       // Moving money between own accounts: neutral color, no sign — it's not income or spending.
       return {
         title: t.note || "Transfer",
-        subtitle: `${accountName(t.fromAccountId)} → ${accountName(t.toAccountId)}`,
+        subtitle:
+          currencyOf(t.fromAccountId) === currencyOf(t.toAccountId)
+            ? `${accountName(t.fromAccountId)} → ${accountName(t.toAccountId)}`
+            : // Exchange: also show what arrived in the other currency.
+              `${accountName(t.fromAccountId)} → ${accountName(t.toAccountId)} · ${formatMoney(t.toAmount, currencyOf(t.toAccountId))}`,
         icon: <TRANSFER_ICON className="size-5" />,
         badge: { className: "bg-primary", icon: <ArrowLeftRight /> },
         amount: formatMoney(t.fromAmount, currencyOf(t.fromAccountId)),
@@ -89,7 +93,7 @@ export function TransactionRow({ transaction, onSelect }: { transaction: Transac
         </span>
         <span className="shrink-0 text-right">
           <span className={cn("block text-sm font-medium tabular-nums", view.amountClass)}>{view.amount}</span>
-          <span className="block text-xs text-muted-foreground tabular-nums">{transaction.time ?? ""}</span>
+          <span className="block text-xs text-muted-foreground tabular-nums">{transaction.time ? formatTime12(transaction.time) : ""}</span>
         </span>
       </button>
     </li>

@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <LockProvider>
         <TransactionSheetProvider>
           {/* Phone-width column on larger screens, matching the sample's mobile layout */}
-          <div className="header-glow relative mx-auto min-h-dvh w-full max-w-md overflow-x-clip pb-28">
+          <div className="relative mx-auto min-h-dvh w-full max-w-md overflow-x-clip pb-28">
             <DataGate>{children}</DataGate>
           </div>
           <BottomNav />

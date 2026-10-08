@@ -86,6 +86,14 @@
   --card-shadow: none;
 }
 
+/* Top-of-screen look: a band that starts at exactly the status bar color, then the sample's radial glow.
+   Defined once on :root so .dark's colors apply. */
+:root {
+  --screen-glow:
+    linear-gradient(180deg, var(--status-bar) 0, transparent 9rem),
+    radial-gradient(120% 60% at 50% 0%, var(--glow) 0%, transparent 70%);
+}
+
 @theme inline {
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
@@ -143,8 +151,14 @@
     color-scheme: dark;
   }
 
+  /* The glow is painted by the body itself (plain CSS), so it's there on the very first paint — before
+     any JavaScript runs — and the status bar blends instantly instead of after the app loads. */
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100dvh;
+    background-image: var(--screen-glow);
+    background-repeat: no-repeat;
+    background-size: 100% 100svh;
   }
 }
 
@@ -158,9 +172,9 @@
   /* Glow behind the top of each screen. The top band starts at --status-bar so it continues the phone's
      status bar seamlessly, then fades into the radial glow from the sample. */
   .header-glow {
-    background-image:
-      linear-gradient(180deg, var(--status-bar) 0, transparent 9rem),
-      radial-gradient(120% 60% at 50% 0%, var(--glow) 0%, transparent 70%);
+    background-image: var(--screen-glow);
+    background-repeat: no-repeat;
+    background-size: 100% 100svh;
   }
 
   .scrollbar-none {

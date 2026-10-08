@@ -6,6 +6,7 @@ import { withTransaction } from "./idb";
 /** Fixed ids so defaults match across devices (helps future sync merges). */
 export const FEES_CATEGORY_ID = "default-expense-fees";
 export const DEFAULT_CASH_ACCOUNT_ID = "default-account-cash";
+export const DEFAULT_KHR_CASH_ACCOUNT_ID = "default-account-cash-khr";
 
 const DEFAULT_CATEGORIES: [id: string, name: string, kind: CategoryKind, color: number, icon: string][] = [
   ["default-expense-housing", "Housing", "expense", 0, "house"],
@@ -29,11 +30,12 @@ const DEFAULT_CATEGORIES: [id: string, name: string, kind: CategoryKind, color: 
 let seeding: Promise<void> | null = null;
 
 /**
- * First run only: default categories and a Cash account, written atomically.
- * Shared promise + fixed ids make it safe to call twice (React runs effects twice in dev).
+ * First run: default categories and a Cash account in each currency, written atomically.
+ * Then one-time upgrades for existing installs. Shared promise + fixed ids make it safe to call twice
+ * (React runs effects twice in dev).
  */
 export function seedIfNeeded(): Promise<void> {
-  seeding ??= seed().catch((error) => {
+  seeding ??= seed().then(addRielCashOnce).catch((error) => {
     seeding = null;
     throw error;
   });
@@ -69,5 +71,28 @@ async function seed(): Promise<void> {
     for (const c of categories) categoryStore.put(c);
     tx.objectStore("accounts").put(cash);
     tx.objectStore("meta").put({ key: "seeded", value: true });
+  });
+}
+
+/**
+ * Riel cash wallet so cash payments can be recorded in either currency. Added once (also to installs from
+ * before riel existed); the flag means a user who deletes it won't see it come back.
+ */
+async function addRielCashOnce(): Promise<void> {
+  if (await getMeta<boolean>("rielCashAdded")) return;
+  const now = new Date().toISOString();
+  const rielCash: Account = {
+    id: DEFAULT_KHR_CASH_ACCOUNT_ID,
+    name: "Cash ៛",
+    kind: "cash",
+    currency: "KHR",
+    openingBalance: 0,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await withTransaction(["accounts", "meta"], "readwrite", (tx) => {
+    tx.objectStore("accounts").put(rielCash);
+    tx.objectStore("meta").put({ key: "rielCashAdded", value: true });
   });
 }

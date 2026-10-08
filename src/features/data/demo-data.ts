@@ -4,7 +4,7 @@
  */
 import { withTransaction } from "@/lib/db/idb";
 import { getDataMode } from "@/lib/db/mode";
-import { DEFAULT_CASH_ACCOUNT_ID, FEES_CATEGORY_ID } from "@/lib/db/seed";
+import { DEFAULT_CASH_ACCOUNT_ID, DEFAULT_KHR_CASH_ACCOUNT_ID, FEES_CATEGORY_ID } from "@/lib/db/seed";
 import { getMeta } from "@/lib/db/settings";
 import { newId } from "@/lib/id";
 import { addMonths, monthKey, monthRange, toLocalDate } from "@/lib/finance/dates";
@@ -46,6 +46,11 @@ async function writeDemoData(cashAccountId: string | undefined): Promise<void> {
 
   const bank: Account = { ...base(), name: "Bank", kind: "bank", currency: "USD", openingBalance: cents(4200), archived: false };
   const wallet: Account = { ...base(), name: "E-wallet", kind: "ewallet", currency: "USD", openingBalance: cents(150), archived: false };
+  // Riel wallet: amounts are whole riel (0 minor digits), never mixed with dollar totals.
+  const riel: Account = {
+    ...base(), id: DEFAULT_KHR_CASH_ACCOUNT_ID, name: "Cash ៛", kind: "cash", currency: "KHR", openingBalance: 200_000, archived: false,
+  };
+  const rielBetween = (min: number, max: number) => Math.round((min + rand() * (max - min)) / 500) * 500;
   const cash = cashAccountId ?? newId();
   const extraCash: Account | null = cashAccountId
     ? null
@@ -75,7 +80,15 @@ async function writeDemoData(cashAccountId: string | undefined): Promise<void> {
     expense(day(5), "default-expense-utilities", between(180, 260), bank.id, "Electricity & water");
     expense(day(6), "default-expense-bills", cents(35), wallet.id, "Internet bills");
 
+    // Exchange dollars for riel: one cross-currency transfer records both what left and what arrived.
+    transactions.push({
+      ...base(), type: "transfer", date: day(10), time: time(), fromAccountId: cash, toAccountId: riel.id,
+      fromAmount: cents(50), toAmount: 205_000, note: "Exchange $ → ៛",
+    });
+
     for (let d = 1; d <= last; d++) {
+      if (rand() < 0.3) expense(day(d), "default-expense-foods", rielBetween(6_000, 20_000), riel.id, "Noodle soup");
+      if (rand() < 0.15) expense(day(d), "default-expense-transport", rielBetween(4_000, 12_000), riel.id, "Tuk-tuk");
       if (rand() < 0.45) expense(day(d), "default-expense-foods", between(4, 28), cash, "Lunch");
       if (rand() < 0.18) expense(day(d), "default-expense-groceries", between(25, 90), wallet.id, "Groceries");
       if (rand() < 0.25) expense(day(d), "default-expense-transport", between(3, 22), wallet.id, "Ride");
@@ -118,12 +131,13 @@ async function writeDemoData(cashAccountId: string | undefined): Promise<void> {
     const accounts = tx.objectStore("accounts");
     accounts.put(bank);
     accounts.put(wallet);
+    accounts.put(riel);
     if (extraCash) accounts.put(extraCash);
     // Nothing in the future.
     for (const t of transactions) if (t.date <= today) tx.objectStore("transactions").put(t);
     tx.objectStore("goals").put(goal);
     for (const e of goalEntries) if (e.date <= today) tx.objectStore("goalEntries").put(e);
     for (const b of budgets) tx.objectStore("budgets").put(b);
-    tx.objectStore("settings").put({ key: "app", value: { currency: "USD", monthlyLimit: cents(5000) }, updatedAt: stamp });
+    tx.objectStore("settings").put({ key: "app", value: { currency: "USD", monthlyLimits: { USD: cents(5000), KHR: 600_000 } }, updatedAt: stamp });
   });
 }

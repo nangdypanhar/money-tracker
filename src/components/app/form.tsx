@@ -14,7 +14,8 @@ import {
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CURRENCIES, type CurrencyCode } from "@/lib/money/currency";
+import { CURRENCIES, type CurrencyCode, minorDigits } from "@/lib/money/currency";
+import { formatAmountInput } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
 
 export function Field({ label, htmlFor, children, hint }: { label: string; htmlFor?: string; children: React.ReactNode; hint?: string }) {
@@ -56,9 +57,25 @@ export function AmountInput({
       <Input
         inputMode="decimal"
         autoComplete="off"
-        placeholder="0.00"
-        value={value}
-        onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, ""))}
+        placeholder={minorDigits(currency) > 0 ? `0.${"0".repeat(minorDigits(currency))}` : "0"}
+        value={formatAmountInput(value, currency)}
+        onChange={(e) => {
+          const input = e.target;
+          // Keep the cursor after the same digit once commas are added or removed.
+          const caret = input.selectionStart ?? input.value.length;
+          const digitsBefore = input.value.slice(0, caret).replace(/[^\d.]/g, "").length;
+          const next = formatAmountInput(input.value, currency);
+          onChange(next);
+          requestAnimationFrame(() => {
+            let seen = 0;
+            let pos = 0;
+            while (pos < next.length && seen < digitsBefore) {
+              if (/[\d.]/.test(next[pos])) seen++;
+              pos++;
+            }
+            input.setSelectionRange(pos, pos);
+          });
+        }}
         className={cn("h-11 rounded-xl pl-7 tabular-nums", large && "h-16 rounded-2xl pl-10 text-3xl font-semibold md:text-3xl")}
         {...props}
       />

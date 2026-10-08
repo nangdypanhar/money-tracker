@@ -8,12 +8,15 @@ import {
   totalsByCategory,
 } from "@/lib/finance/calculations";
 import { addMonths, monthRange, type MonthKey } from "@/lib/finance/dates";
+import type { CurrencyCode } from "@/lib/money/currency";
 import { useData } from "./data-provider";
 
-/** Month figures in the app currency. Transfers/goal entries/adjustments never enter these totals. */
-export function useMonthSummary(month: MonthKey) {
+/**
+ * Month figures for ONE currency (only that currency's accounts). Pages call it per currency and show
+ * dollar and riel in separate blocks. Transfers/goal entries/adjustments never enter these totals.
+ */
+export function useMonthSummary(month: MonthKey, currency: CurrencyCode) {
   const { data } = useData();
-  const { currency } = data.settings;
 
   return useMemo(() => {
     const transactions = filterByCurrency(data.transactions, data.accounts, currency);

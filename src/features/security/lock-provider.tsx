@@ -185,17 +185,14 @@ function LockScreen({
           <Delete className="size-5" />
         </PadButton>
         <PadButton onClick={() => press("0")}>0</PadButton>
-        {pinLength ? (
-          <span aria-hidden />
-        ) : (
-          <PadButton
-            onClick={() => submit(pin)}
-            disabled={pin.length < PIN_MIN_LENGTH || waiting > 0 || checking}
-            className="bg-primary text-primary-foreground text-sm"
-          >
-            {checking ? "…" : "OK"}
-          </PadButton>
-        )}
+        {/* OK always works; with a known PIN length it also unlocks automatically on the last digit. */}
+        <PadButton
+          onClick={() => submit(pin)}
+          disabled={pin.length < (pinLength ?? PIN_MIN_LENGTH) || waiting > 0 || checking}
+          className="bg-primary text-primary-foreground text-sm"
+        >
+          {checking ? "…" : "OK"}
+        </PadButton>
       </div>
     </div>
   );

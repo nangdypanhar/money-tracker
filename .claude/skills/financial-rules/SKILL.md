@@ -22,6 +22,17 @@ ask before changing behavior.
 - Percentages (budget used, goal progress) are computed at display time and may be clamped visually,
   but the underlying numbers are not clamped.
 - Use `Number.isSafeInteger` to guard amounts.
+- Supported currencies (`src/lib/money/currency.ts`): **USD** (2 digits) and **KHR** riel (0 digits — whole
+  riel, as used in practice). Each account and goal has one currency; it can't change once it has history.
+- **Dollar on top, riel below (user's request, ABA-style):** Home, History tiles, Accounts, Goals, and Budget
+  limits show a block per currency in `currencies` from `useData()` (only currencies with active accounts, USD
+  first). The chart screens (Budget, Breakdown, Report) show one currency at a time via a $/៛ tab
+  (`chartCurrency`). Each block only includes that currency's accounts — `useMonthSummary(month, currency)`,
+  `settings.monthlyLimits[currency]`, budgets with that `currency`. Never add the blocks together.
+- Default accounts: **Cash** (USD) and **Cash ៛** (KHR, added once — also to older installs).
+- Entering money: the user taps an account card (`AccountPicker`); the amount's currency is that account's.
+  A dollar→riel transfer asks for the amount received and shows the implied rate (display only).
+- Amount inputs format thousands with commas as you type (`formatAmountInput`); `parseAmount` ignores them.
 
 ## 2. Transaction types
 

@@ -3,18 +3,18 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AmountInput, Field, FormDrawer, useConfirm } from "@/components/app/form";
-import { CategoryIcon, paletteColor } from "@/components/finance/category-icon";
+import { ACCOUNT_ICONS, CategoryIcon, paletteColor } from "@/components/finance/category-icon";
 import { Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useData } from "@/features/data/data-provider";
 import { deleteTransaction, saveTransfer, transactionsRepo } from "@/lib/db/repositories";
 import { FEES_CATEGORY_ID } from "@/lib/db/seed";
 import { toLocalDate, toLocalTime } from "@/lib/finance/dates";
-import type { ExpenseTransaction, Transaction } from "@/lib/finance/types";
-import type { CurrencyCode } from "@/lib/money/currency";
+import { accountBalance } from "@/lib/finance/calculations";
+import type { Account, ExpenseTransaction, Transaction } from "@/lib/finance/types";
+import { CURRENCIES, type CurrencyCode, minorDigits } from "@/lib/money/currency";
 import { formatMoney, parseAmount, toInputString } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
 
@@ -92,7 +92,7 @@ function TransactionForm({
   initialDate?: string;
   onDone: () => void;
 }) {
-  const { data, refresh, accountById } = useData();
+  const { data, refresh, accountById, currency: viewCurrency } = useData();
   const { confirm, dialog } = useConfirm();
   const [saving, setSaving] = useState(false);
 
@@ -102,9 +102,9 @@ function TransactionForm({
       ? (data.transactions.find((t) => t.type === "expense" && t.transferId === editing.id) as ExpenseTransaction | undefined)
       : undefined;
 
-  const currencyOf = (id: string) => accountById.get(id)?.currency ?? data.settings.currency;
+  const currencyOf = (id: string) => accountById.get(id)?.currency ?? viewCurrency;
   const [form, setForm] = useState<FormState>(() =>
-    initialState(editing, initialType, activeAccounts[0]?.id ?? "", existingFee, currencyOf, initialDate),
+    initialState(editing, initialType, (activeAccounts.find((a) => a.currency === viewCurrency) ?? activeAccounts[0])?.id ?? "", existingFee, currencyOf, initialDate),
   );
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -113,7 +113,7 @@ function TransactionForm({
     return (
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          Correction of {formatMoney(editing.delta, account?.currency ?? data.settings.currency, { signed: true })} on {account?.name ?? "a deleted account"},
+          Correction of {formatMoney(editing.delta, account?.currency ?? viewCurrency, { signed: true })} on {account?.name ?? "a deleted account"},
           made on {editing.date}. Adjustments change the balance but never count as income or spending.
         </p>
         <Button variant="destructive" className="h-11 rounded-xl" onClick={() => remove(editing)}>
@@ -229,27 +229,39 @@ function TransactionForm({
 
       {form.type === "transfer" ? (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="From">
-              <AccountSelect value={form.fromAccountId} onChange={(v) => set("fromAccountId", v)} accounts={activeAccounts} />
-            </Field>
-            <Field label="To">
-              <AccountSelect value={form.toAccountId} onChange={(v) => set("toAccountId", v)} accounts={activeAccounts} />
-            </Field>
-          </div>
+          <Field label="From">
+            <AccountPicker
+              label="From account"
+              value={form.fromAccountId}
+              onChange={(v) => setForm((f) => ({ ...f, fromAccountId: v, toAccountId: f.toAccountId === v ? "" : f.toAccountId }))}
+              accounts={activeAccounts}
+            />
+          </Field>
+          <Field label="To">
+            <AccountPicker
+              label="To account"
+              value={form.toAccountId}
+              onChange={(v) => set("toAccountId", v)}
+              accounts={activeAccounts}
+              exclude={form.fromAccountId}
+            />
+          </Field>
           {crossCurrency && (
-            <Field label="Amount received" hint="Different currencies: enter what actually arrived.">
-              <AmountInput value={form.toAmount} onChange={(v) => set("toAmount", v)} currency={currencyOf(form.toAccountId)} />
+            <Field
+              label={`Amount received (${CURRENCIES[currencyOf(form.toAccountId)].short})`}
+              hint={exchangeRateHint(form.amount, form.toAmount, currencyOf(form.fromAccountId), currencyOf(form.toAccountId)) ?? "Exchange: enter what actually arrived."}
+            >
+              <AmountInput value={form.toAmount} onChange={(v) => set("toAmount", v)} currency={currencyOf(form.toAccountId)} aria-label="Amount received" />
             </Field>
           )}
           <Field label="Fee (optional)" hint="Counted as a spending in Fees. The transferred amount is not spending.">
-            <AmountInput value={form.fee} onChange={(v) => set("fee", v)} currency={accountCurrency} />
+            <AmountInput value={form.fee} onChange={(v) => set("fee", v)} currency={accountCurrency} aria-label="Fee" />
           </Field>
         </>
       ) : (
         <>
-          <Field label="Account">
-            <AccountSelect value={form.accountId} onChange={(v) => set("accountId", v)} accounts={activeAccounts} />
+          <Field label={form.type === "income" ? "Into account" : "Paid from"}>
+            <AccountPicker label="Account" value={form.accountId} onChange={(v) => set("accountId", v)} accounts={activeAccounts} />
           </Field>
           <Field label="Category">
             <div className="grid grid-cols-4 gap-2">
@@ -310,29 +322,72 @@ function TransactionForm({
   );
 }
 
-function AccountSelect({
+/**
+ * Tappable account cards (dollar accounts first, then riel) showing each balance in its own currency.
+ * The amount's currency follows the chosen account.
+ */
+function AccountPicker({
   value,
   onChange,
   accounts,
+  exclude,
+  label,
 }: {
   value: string;
   onChange: (id: string) => void;
-  accounts: { id: string; name: string }[];
+  accounts: Account[];
+  exclude?: string;
+  label: string;
 }) {
+  const { data, currencies } = useData();
+  const options = accounts
+    .filter((a) => a.id !== exclude)
+    .sort((a, b) => currencies.indexOf(a.currency) - currencies.indexOf(b.currency));
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className="h-11! w-full rounded-xl">
-        <SelectValue placeholder="Choose account" />
-      </SelectTrigger>
-      <SelectContent>
-        {accounts.map((a) => (
-          <SelectItem key={a.id} value={a.id}>
-            {a.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div role="radiogroup" aria-label={label} className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 py-0.5">
+      {options.map((account) => {
+        const Icon = ACCOUNT_ICONS[account.kind];
+        const selected = account.id === value;
+        const balance = accountBalance(account, data.transactions, data.goalEntries);
+        return (
+          <button
+            key={account.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(account.id)}
+            className={cn(
+              "flex min-w-32 shrink-0 flex-col items-start gap-1.5 rounded-2xl border p-3 text-left transition-colors",
+              selected ? "border-ring bg-primary/20 ring-1 ring-ring" : "bg-background/40 hover:bg-accent",
+            )}
+          >
+            <span className="flex w-full items-center gap-1.5 text-xs text-muted-foreground">
+              <Icon className="size-3.5 shrink-0" />
+              <span className="truncate">{account.name}</span>
+              <span className="ml-auto rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                {CURRENCIES[account.currency].symbol}
+              </span>
+            </span>
+            <span className={cn("text-sm font-medium tabular-nums", balance < 0 && "text-expense")}>
+              {formatMoney(balance, account.currency)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
+}
+
+/** "Rate: $1 = ៛4,100" from what left and what arrived. Display only — amounts are stored as entered. */
+function exchangeRateHint(fromText: string, toText: string, from: CurrencyCode, to: CurrencyCode): string | null {
+  const fromMinor = parseAmount(fromText, from);
+  const toMinor = parseAmount(toText, to);
+  if (!fromMinor || !toMinor) return null;
+  const rate = toMinor / 10 ** minorDigits(to) / (fromMinor / 10 ** minorDigits(from));
+  const shown = rate >= 1 ? rate : 1 / rate;
+  const [one, other] = rate >= 1 ? [from, to] : [to, from];
+  const value = new Intl.NumberFormat("en-US", { maximumFractionDigits: shown >= 100 ? 0 : 2 }).format(shown);
+  return `Rate: ${CURRENCIES[one].symbol}1 = ${CURRENCIES[other].symbol}${value}`;
 }
 
 function isUsedBy(t: Transaction | null, accountId: string): boolean {

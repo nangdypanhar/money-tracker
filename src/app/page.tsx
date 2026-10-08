@@ -4,7 +4,7 @@ import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Plus } from 
 import Link from "next/link";
 import { useMemo } from "react";
 import { ACCOUNT_ICONS, GOAL_ICON } from "@/components/finance/category-icon";
-import { Delta, EmptyState, Panel, SectionTitle, StackedBar, StatTile } from "@/components/finance/primitives";
+import { CurrencyTag, Delta, EmptyState, Panel, SectionTitle, StackedBar } from "@/components/finance/primitives";
 import { TransactionList } from "@/components/finance/transaction-list";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/features/data/data-provider";
@@ -12,27 +12,27 @@ import { useMonthSummary } from "@/features/data/use-month-summary";
 import { useTransactionSheet } from "@/features/transactions/transaction-sheet";
 import { accountBalance, goalBalance } from "@/lib/finance/calculations";
 import { switchDataMode } from "@/lib/db/mode";
+import { monthlyLimitFor } from "@/lib/db/settings";
 import { monthKey } from "@/lib/finance/dates";
+import type { CurrencyCode } from "@/lib/money/currency";
 import { formatMoney, percentChange, sumMinor } from "@/lib/money/money";
+import { cn } from "@/lib/utils";
 
 export default function HomePage() {
-  const { data, categoryById } = useData();
+  const { data, currencies } = useData();
   const { openTransaction } = useTransactionSheet();
-  const summary = useMonthSummary(monthKey(new Date()));
-  const { currency } = data.settings;
 
+  // All active accounts, dollar accounts first then riel (ABA style).
   const accounts = useMemo(
     () =>
       data.accounts
-        .filter((a) => !a.archived && a.currency === currency)
+        .filter((a) => !a.archived)
+        .sort((a, b) => currencies.indexOf(a.currency) - currencies.indexOf(b.currency))
         .map((a) => ({ account: a, balance: accountBalance(a, data.transactions, data.goalEntries) })),
-    [data.accounts, data.transactions, data.goalEntries, currency],
+    [data.accounts, data.transactions, data.goalEntries, currencies],
   );
-  const available = sumMinor(accounts.map((a) => a.balance));
-  const saved = sumMinor(data.goals.filter((g) => g.currency === currency).map((g) => goalBalance(g, data.goalEntries)));
 
   const recent = data.transactions.slice(0, 8);
-  const limit = data.settings.monthlyLimit;
 
   return (
     <main className="flex flex-col gap-5 px-4">
@@ -52,14 +52,26 @@ export default function HomePage() {
       </header>
 
       <Panel className="flex flex-col gap-4 p-5">
-        <div>
-          <p className="text-sm text-foreground/90">Total balance</p>
-          <p className="text-3xl font-semibold tabular-nums">{formatMoney(available, currency)}</p>
-          {saved > 0 && (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <GOAL_ICON className="size-3.5" /> {formatMoney(saved, currency)} set aside in savings goals
-            </p>
-          )}
+        <p className="text-sm text-foreground/90">Total balance</p>
+        {/* Dollar on top, riel below — each total only includes that currency's accounts. */}
+        <div className="flex flex-col divide-y divide-border">
+          {currencies.map((code) => {
+            const total = sumMinor(accounts.filter((r) => r.account.currency === code).map((r) => r.balance));
+            const saved = sumMinor(
+              data.goals.filter((g) => g.currency === code).map((g) => goalBalance(g, data.goalEntries)),
+            );
+            return (
+              <div key={code} className="flex flex-col gap-0.5 py-2.5 first:pt-0 last:pb-0">
+                <CurrencyTag currency={code} />
+                <p className={cn("text-3xl font-semibold tabular-nums", total < 0 && "text-expense")}>{formatMoney(total, code)}</p>
+                {saved > 0 && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <GOAL_ICON className="size-3.5" /> {formatMoney(saved, code)} set aside in savings goals
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5">
           {accounts.map(({ account, balance }) => {
@@ -70,7 +82,7 @@ export default function HomePage() {
                   <Icon className="size-3.5" /> {account.name}
                 </span>
                 <span className={balance < 0 ? "text-sm font-medium text-expense tabular-nums" : "text-sm font-medium tabular-nums"}>
-                  {formatMoney(balance, currency)}
+                  {formatMoney(balance, account.currency)}
                 </span>
               </Link>
             );
@@ -90,30 +102,21 @@ export default function HomePage() {
         </QuickAction>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <StatTile
-          label="Income this month"
-          value={<span className="text-income">{formatMoney(summary.income, currency)}</span>}
-          footer={<Delta value={percentChange(summary.income, summary.previousIncome)} goodWhen="up" />}
-        />
-        <StatTile
-          label="Spent this month"
-          value={<span className="text-expense">{formatMoney(summary.expenses, currency)}</span>}
-          footer={<Delta value={percentChange(summary.expenses, summary.previousExpenses)} goodWhen="down" />}
-        />
-      </div>
+      <Panel className="flex flex-col gap-3">
+        <SectionTitle>This month</SectionTitle>
+        <div className="flex flex-col divide-y divide-border">
+          {currencies.map((code) => (
+            <MonthRow key={code} currency={code} />
+          ))}
+        </div>
+      </Panel>
 
       <Link href="/budget" className="block">
         <Panel className="flex flex-col gap-3">
           <SectionTitle action={<ChevronRight className="size-4 text-muted-foreground" />}>Monthly budget</SectionTitle>
-          <StackedBar
-            segments={summary.expenseByCategory.map((c) => ({ value: c.total, color: categoryById.get(c.categoryId)?.color ?? 0 }))}
-          />
-          <p className="text-xs text-muted-foreground">
-            {limit
-              ? `${formatMoney(summary.expenses, currency)} of ${formatMoney(limit, currency)} spent · ${formatMoney(limit - summary.expenses, currency)} left`
-              : `${formatMoney(summary.expenses, currency)} spent · tap to set a monthly limit`}
-          </p>
+          {currencies.map((code) => (
+            <BudgetRow key={code} currency={code} />
+          ))}
         </Panel>
       </Link>
 
@@ -146,6 +149,48 @@ export default function HomePage() {
         )}
       </section>
     </main>
+  );
+}
+
+/** Income and spending this month for one currency, with change vs last month. */
+function MonthRow({ currency }: { currency: CurrencyCode }) {
+  const summary = useMonthSummary(monthKey(new Date()), currency);
+  return (
+    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+      <CurrencyTag currency={currency} />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">Income</p>
+          <p className="truncate font-medium text-income tabular-nums">{formatMoney(summary.income, currency)}</p>
+          <Delta value={percentChange(summary.income, summary.previousIncome)} goodWhen="up" suffix="vs last month" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">Spent</p>
+          <p className="truncate font-medium text-expense tabular-nums">{formatMoney(summary.expenses, currency)}</p>
+          <Delta value={percentChange(summary.expenses, summary.previousExpenses)} goodWhen="down" suffix="vs last month" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** This month's spending by category against the monthly limit, for one currency. */
+function BudgetRow({ currency }: { currency: CurrencyCode }) {
+  const { data, categoryById } = useData();
+  const summary = useMonthSummary(monthKey(new Date()), currency);
+  const limit = monthlyLimitFor(data.settings, currency);
+  return (
+    <div className="flex flex-col gap-2">
+      <CurrencyTag currency={currency} />
+      <StackedBar
+        segments={summary.expenseByCategory.map((c) => ({ value: c.total, color: categoryById.get(c.categoryId)?.color ?? 0 }))}
+      />
+      <p className="text-xs text-muted-foreground">
+        {limit
+          ? `${formatMoney(summary.expenses, currency)} of ${formatMoney(limit, currency)} spent · ${formatMoney(limit - summary.expenses, currency)} left`
+          : `${formatMoney(summary.expenses, currency)} spent · tap to set a monthly limit`}
+      </p>
+    </div>
   );
 }
 

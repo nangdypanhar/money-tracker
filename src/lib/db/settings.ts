@@ -1,4 +1,4 @@
-import { DEFAULT_CURRENCY, type CurrencyCode } from "@/lib/money/currency";
+import { DEFAULT_CURRENCY, type CurrencyCode, isCurrencyCode } from "@/lib/money/currency";
 import type { Minor } from "@/lib/money/money";
 import { openDb, promisify, withTransaction } from "./idb";
 
@@ -9,9 +9,10 @@ export interface SettingsMap {
 }
 
 export interface AppSettings {
+  /** Default currency for new accounts and goals. */
   currency: CurrencyCode;
-  /** Overall monthly spending limit; null = not set. */
-  monthlyLimit: Minor | null;
+  /** Overall monthly spending limit per currency; a missing entry = not set. */
+  monthlyLimits: Partial<Record<CurrencyCode, Minor>>;
 }
 
 export interface SecuritySettings {
@@ -29,8 +30,32 @@ export interface SecuritySettings {
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   currency: DEFAULT_CURRENCY,
-  monthlyLimit: null,
+  monthlyLimits: {},
 };
+
+/**
+ * Accepts any stored/imported shape and returns valid settings. Older versions stored a single
+ * `monthlyLimit` (in the app currency); it becomes that currency's entry in `monthlyLimits`.
+ */
+export function normalizeAppSettings(raw: unknown): AppSettings {
+  const value = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const currency = typeof value.currency === "string" && isCurrencyCode(value.currency) ? value.currency : DEFAULT_CURRENCY;
+  const isLimit = (v: unknown): v is Minor => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+
+  const monthlyLimits: Partial<Record<CurrencyCode, Minor>> = {};
+  if (typeof value.monthlyLimits === "object" && value.monthlyLimits !== null) {
+    for (const [code, limit] of Object.entries(value.monthlyLimits)) {
+      if (isCurrencyCode(code) && isLimit(limit)) monthlyLimits[code] = limit;
+    }
+  } else if (isLimit(value.monthlyLimit)) {
+    monthlyLimits[currency] = value.monthlyLimit;
+  }
+  return { currency, monthlyLimits };
+}
+
+export function monthlyLimitFor(settings: AppSettings, currency: CurrencyCode): Minor | null {
+  return settings.monthlyLimits[currency] ?? null;
+}
 
 interface SettingRow<K extends keyof SettingsMap> {
   key: K;

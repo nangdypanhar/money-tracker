@@ -6,7 +6,8 @@ no account or backend required.
 
 ## Features
 
-- **Accounts** — cash, bank, e-wallet, credit; opening balances; archive
+- **Accounts** — cash, bank, e-wallet, credit; US dollar or Cambodian riel; opening balances; archive
+- **Dollar & riel** — switch between $ and ៛ views; totals are never mixed (exchange = a transfer)
 - **Transactions** — income and expenses with categories, notes, and dates
 - **Transfers** — move money between accounts (never counted as income or expense)
 - **Budgets** — monthly limits per category with progress and over-budget states

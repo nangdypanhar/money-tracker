@@ -11,7 +11,7 @@ There is **no backend**. All data lives on the device in IndexedDB. The architec
 future Google Drive sync, notifications, and stronger local encryption — but **do not implement those
 integrations unless explicitly asked**.
 
-> **Status:** v1 is implemented (all features above, local-only, USD only). Google Drive sync,
+> **Status:** v1 is implemented (all features above, local-only, US dollar + Cambodian riel). Google Drive sync,
 > notifications, and at-rest encryption wait for an explicit request.
 
 ## Tech stack
@@ -153,9 +153,12 @@ Neither theme uses pure white or near-black — the user found those too bright 
 Accent rule: never green or red (reserved for income/expense).
 
 **Phone status bar:** `--status-bar` (`#d4def3` light / `#182a52` dark, mirrored in `src/lib/theme.ts`) is
-the `theme-color`, and `.header-glow` starts from that exact color, so the bar and the screen top blend with
-no seam. `StatusBarColorSync` (theme provider) makes the bar follow the **in-app** theme, and a pre-paint
-script in `layout.tsx` sets it before React loads. Change both places together.
+the `theme-color`, and the body's top band starts from that exact color, so the bar and the screen blend with
+no seam. The app owns the **only** theme-color tag (`#mt-status-bar`): a pre-paint script in `layout.tsx`
+creates it, and `StatusBarColorSync` **replaces** it (new element — Android Chrome needs that to repaint
+without a reload) in the same frame the theme class changes. Don't add `themeColor` to Next's `viewport`
+export: a React-rendered tag with the same color gets confused with ours during hydration and crashes on
+replace. Change the colors in both places together.
 
 **Type.** Poppins only. Headers ~20px/500, centered. Hero amounts large (~28–32px) and semibold with
 `tabular-nums` (the sample shows monospaced figures; we get aligned digits from Poppins tabular numerals
@@ -182,6 +185,11 @@ rounded (`rounded-full`). Screen side padding 16px; card padding ~16–20px; gap
   "Completed" subtitle; right side: signed colored amount + time. Grouped under "Today" etc.
 - **Line chart:** thin colored lines on dark, muted axis labels; legend tiles below ("Total transfer in /
   out").
+- **Currencies (ABA-style):** Home, History tiles, Accounts, Goals, and Budget limits stack a Dollar block on
+  top and a Riel block below (`CurrencyTag` heads each). The **chart screens** (Budget, Breakdown, Report) use
+  a `ChartCurrencyTabs` $/៛ tab instead, to save space; the choice is shared and remembered on the device.
+  Accounts are chosen as tappable cards showing each balance in its currency.
+- **Times** are stored "HH:mm" (24-hour, sorts correctly) and shown 12-hour (`formatTime12`: "1:16 PM").
 - **Bottom nav:** floating, rounded pill bar centered above the home indicator, 4 icons
   (home, calendar, chart, profile); active item is a filled `primary` circle/pill.
 

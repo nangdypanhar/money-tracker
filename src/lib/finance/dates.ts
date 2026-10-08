@@ -54,3 +54,12 @@ export function daysInRange(range: DateRange): LocalDate[] {
   }
   return days;
 }
+
+/** Display a stored "HH:mm" time in 12-hour form ("13:16" → "1:16 PM"). Storage stays 24-hour so it sorts. */
+export function formatTime12(time: string): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return time;
+  const hours = Number(match[1]);
+  const period = hours >= 12 ? "PM" : "AM";
+  return `${hours % 12 || 12}:${match[2]} ${period}`;
+}

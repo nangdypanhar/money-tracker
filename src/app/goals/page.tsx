@@ -14,14 +14,19 @@ import { goalEntriesRepo, goalsRepo } from "@/lib/db/repositories";
 import { accountBalance, goalBalance, goalProgress } from "@/lib/finance/calculations";
 import { parseLocalDate, toLocalDate } from "@/lib/finance/dates";
 import type { Goal } from "@/lib/finance/types";
+import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/money/currency";
 import { formatMoney, parseAmount, sumMinor, toInputString } from "@/lib/money/money";
 
 export default function GoalsPage() {
-  const { data } = useData();
+  const { data, currency } = useData();
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
   const [moving, setMoving] = useState<Goal | null>(null);
-  const { currency } = data.settings;
-  const totalSaved = sumMinor(data.goals.filter((g) => g.currency === currency).map((g) => goalBalance(g, data.goalEntries)));
+  // One total per currency that has goals — never mixed.
+  const goalCurrencies = [...new Set(data.goals.map((g) => g.currency))];
+  const totals = (goalCurrencies.length ? goalCurrencies : [currency]).map((code) => ({
+    code,
+    total: sumMinor(data.goals.filter((g) => g.currency === code).map((g) => goalBalance(g, data.goalEntries))),
+  }));
 
   return (
     <main className="flex flex-col gap-5 px-4">
@@ -38,7 +43,11 @@ export default function GoalsPage() {
 
       <Panel>
         <p className="text-sm text-foreground/90">Total saved</p>
-        <p className="text-3xl font-semibold tabular-nums">{formatMoney(totalSaved, currency)}</p>
+        {totals.map(({ code, total }, i) => (
+          <p key={code} className={i === 0 ? "text-3xl font-semibold tabular-nums" : "mt-1 text-xl font-semibold tabular-nums"}>
+            {formatMoney(total, code)}
+          </p>
+        ))}
         <InfoRow className="mt-2">Saving moves money out of an account into a goal. It isn&apos;t spending.</InfoRow>
       </Panel>
 
@@ -89,7 +98,9 @@ export default function GoalsPage() {
 function GoalForm({ goal, onDone }: { goal: Goal | null; onDone: () => void }) {
   const { data, refresh } = useData();
   const { confirm, dialog } = useConfirm();
-  const currency = goal?.currency ?? data.settings.currency;
+  const { currency: viewCurrency } = useData();
+  const hasEntries = !!goal && data.goalEntries.some((e) => e.goalId === goal.id);
+  const [currency, setCurrency] = useState<CurrencyCode>(goal?.currency ?? viewCurrency);
   const [name, setName] = useState(goal?.name ?? "");
   const [target, setTarget] = useState(goal ? toInputString(goal.targetAmount, currency) : "");
   const [targetDate, setTargetDate] = useState(goal?.targetDate ?? "");
@@ -101,7 +112,7 @@ function GoalForm({ goal, onDone }: { goal: Goal | null; onDone: () => void }) {
     if (!name.trim()) return toast.error("Name the goal.");
     if (!targetAmount || targetAmount <= 0) return toast.error("Enter a target amount.");
     const fields = { name: name.trim(), targetAmount, targetDate: targetDate || undefined };
-    if (goal) await goalsRepo.update({ ...goal, ...fields });
+    if (goal) await goalsRepo.update({ ...goal, ...fields, currency: hasEntries ? goal.currency : currency });
     else await goalsRepo.create({ ...fields, currency, archived: false });
     await refresh();
     onDone();
@@ -121,6 +132,16 @@ function GoalForm({ goal, onDone }: { goal: Goal | null; onDone: () => void }) {
     <form onSubmit={save} className="flex flex-col gap-4">
       <Field label="Name" htmlFor="goal-name">
         <Input id="goal-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emergency fund" className="h-11 rounded-xl" />
+      </Field>
+      <Field label="Currency" hint={hasEntries ? "This goal has money in it, so its currency can't change." : undefined}>
+        <Segmented
+          value={currency}
+          onChange={(next: CurrencyCode) => !hasEntries && setCurrency(next)}
+          options={CURRENCY_CODES.filter((code) => !hasEntries || code === currency).map((code) => ({
+            value: code,
+            label: `${CURRENCIES[code].symbol} ${CURRENCIES[code].short}`,
+          }))}
+        />
       </Field>
       <Field label="Target">
         <AmountInput value={target} onChange={setTarget} currency={currency} />

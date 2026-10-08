@@ -9,25 +9,36 @@ import { EmptyState, Segmented } from "@/components/finance/primitives";
 import { TransactionList } from "@/components/finance/transaction-list";
 import { Input } from "@/components/ui/input";
 import { useData } from "@/features/data/data-provider";
-import { useMonthSummary } from "@/features/data/use-month-summary";
 import { useTransactionSheet } from "@/features/transactions/transaction-sheet";
-import { dailyTotals } from "@/lib/finance/calculations";
-import { inRange, monthLabel, parseLocalDate } from "@/lib/finance/dates";
+import { dailyTotals, filterByCurrency, totalExpenses, totalIncome } from "@/lib/finance/calculations";
+import { inRange, monthLabel, monthRange, parseLocalDate } from "@/lib/finance/dates";
 import type { Transaction } from "@/lib/finance/types";
 import { formatMoney } from "@/lib/money/money";
 
 type Filter = "all" | "expense" | "income" | "transfer";
 
 export default function TransactionsPage() {
-  const { data, month, setMonth, categoryById, accountById } = useData();
+  const { data, month, setMonth, categoryById, accountById, currencies } = useData();
   const { openTransaction } = useTransactionSheet();
-  const summary = useMonthSummary(month);
+  const range = useMemo(() => monthRange(month), [month]);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [day, setDay] = useState<string | null>(null);
 
-  const totals = useMemo(() => dailyTotals(summary.transactions, summary.range), [summary.transactions, summary.range]);
-  const dayTotals = day ? (totals.get(day) ?? { income: 0, expenses: 0 }) : null;
+  // Per-currency figures (dollar first, riel below) — never added together.
+  const perCurrency = useMemo(
+    () =>
+      currencies.map((currency) => {
+        const txs = filterByCurrency(data.transactions, data.accounts, currency);
+        return {
+          currency,
+          daily: dailyTotals(txs, range),
+          income: totalIncome(txs, range),
+          expenses: totalExpenses(txs, range),
+        };
+      }),
+    [currencies, data.transactions, data.accounts, range],
+  );
 
   const changeMonth = (next: string) => {
     setMonth(next);
@@ -51,9 +62,9 @@ export default function TransactionsPage() {
     };
     return data.transactions.filter(
       (t) =>
-        (day ? t.date === day : inRange(t.date, summary.range)) && (filter === "all" || t.type === filter) && matches(t),
+        (day ? t.date === day : inRange(t.date, range)) && (filter === "all" || t.type === filter) && matches(t),
     );
-  }, [data.transactions, summary.range, day, filter, query, categoryById, accountById]);
+  }, [data.transactions, range, day, filter, query, categoryById, accountById]);
 
   const dayLabel = day
     ? parseLocalDate(day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
@@ -79,7 +90,12 @@ export default function TransactionsPage() {
       </div>
 
       <div className="px-4">
-        <MonthCalendar month={month} totals={totals} currency={summary.currency} selected={day} onSelect={setDay} />
+        <MonthCalendar
+          month={month}
+          rows={perCurrency.map((c) => ({ currency: c.currency, totals: c.daily }))}
+          selected={day}
+          onSelect={setDay}
+        />
       </div>
 
       <div className="flex flex-col gap-2 px-4">
@@ -98,15 +114,19 @@ export default function TransactionsPage() {
         <div className="grid grid-cols-2 gap-3 text-center text-xs">
           <div className="rounded-2xl border bg-card/60 py-2.5">
             <p className="text-muted-foreground">Income</p>
-            <p className="text-sm font-medium text-income tabular-nums">
-              {formatMoney(dayTotals ? dayTotals.income : summary.income, summary.currency)}
-            </p>
+            {perCurrency.map((c) => (
+              <p key={c.currency} className="text-sm font-medium text-income tabular-nums">
+                {formatMoney(day ? (c.daily.get(day)?.income ?? 0) : c.income, c.currency)}
+              </p>
+            ))}
           </div>
           <div className="rounded-2xl border bg-card/60 py-2.5">
             <p className="text-muted-foreground">Spent</p>
-            <p className="text-sm font-medium text-expense tabular-nums">
-              {formatMoney(dayTotals ? dayTotals.expenses : summary.expenses, summary.currency)}
-            </p>
+            {perCurrency.map((c) => (
+              <p key={c.currency} className="text-sm font-medium text-expense tabular-nums">
+                {formatMoney(day ? (c.daily.get(day)?.expenses ?? 0) : c.expenses, c.currency)}
+              </p>
+            ))}
           </div>
         </div>
       </div>

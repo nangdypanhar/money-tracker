@@ -10,7 +10,7 @@ import {
   goalsRepo,
   transactionsRepo,
 } from "@/lib/db/repositories";
-import { type AppSettings, DEFAULT_APP_SETTINGS, getSetting } from "@/lib/db/settings";
+import { type AppSettings, getSetting, normalizeAppSettings } from "@/lib/db/settings";
 import { withTransaction } from "@/lib/db/idb";
 import type { Account, Budget, Category, Goal, GoalEntry, Transaction } from "@/lib/finance/types";
 import { isCurrencyCode } from "@/lib/money/currency";
@@ -52,7 +52,7 @@ export async function buildBackup(): Promise<BackupFile> {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     encrypted: false,
-    data: { accounts, categories, transactions, budgets, goals, goalEntries, settings: { ...DEFAULT_APP_SETTINGS, ...settings } },
+    data: { accounts, categories, transactions, budgets, goals, goalEntries, settings: normalizeAppSettings(settings) },
   };
 }
 
@@ -150,11 +150,8 @@ export function validateBackup(json: unknown): ValidationResult {
     }
   }
 
-  const settings = isObject(data.settings) ? data.settings : {};
-  const safeSettings: AppSettings = {
-    currency: isString(settings.currency) && isCurrencyCode(settings.currency) ? settings.currency : DEFAULT_APP_SETTINGS.currency,
-    monthlyLimit: isAmount(settings.monthlyLimit) ? settings.monthlyLimit : null,
-  };
+  // Older backups stored one `monthlyLimit`; normalizing converts it to the per-currency shape.
+  const safeSettings: AppSettings = normalizeAppSettings(data.settings);
 
   // Schema upgraders for older backups go here (v1 is the first version).
   return {

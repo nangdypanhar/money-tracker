@@ -2,6 +2,7 @@
 
 import { ChartColumn, ChartNoAxesCombined, Settings2 } from "lucide-react";
 import Link from "next/link";
+import { ChartCurrencyTabs } from "@/components/app/chart-currency-tabs";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { CategoryChip, EmptyState, InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
 import { SpendingGauge } from "@/components/finance/spending-gauge";
@@ -9,23 +10,18 @@ import { TransactionList } from "@/components/finance/transaction-list";
 import { useData } from "@/features/data/data-provider";
 import { useMonthSummary } from "@/features/data/use-month-summary";
 import { useTransactionSheet } from "@/features/transactions/transaction-sheet";
-import { inRange, monthKey, monthLabel } from "@/lib/finance/dates";
+import { monthlyLimitFor } from "@/lib/db/settings";
+import { inRange, monthKey, monthLabel, monthRange } from "@/lib/finance/dates";
+import type { CurrencyCode } from "@/lib/money/currency";
 import { formatMoney } from "@/lib/money/money";
 
-/** Sample screen 1: "Monthly budget". */
+/** Sample screen 1: "Monthly budget" — one gauge for the currency picked in the $/៛ tab. */
 export default function BudgetPage() {
-  const { data, month, categoryById } = useData();
+  const { data, month, chartCurrency } = useData();
   const { openTransaction } = useTransactionSheet();
-  const summary = useMonthSummary(month);
-  const { currency, monthlyLimit } = data.settings;
-
-  const segments = summary.expenseByCategory.map((c) => ({
-    value: c.total,
-    color: categoryById.get(c.categoryId)?.color ?? 0,
-  }));
-  const monthTransactions = data.transactions.filter((t) => inRange(t.date, summary.range)).slice(0, 30);
+  const range = monthRange(month);
+  const monthTransactions = data.transactions.filter((t) => inRange(t.date, range)).slice(0, 30);
   const isCurrentMonth = month === monthKey(new Date());
-  const over = monthlyLimit !== null && summary.expenses > monthlyLimit;
 
   return (
     <main className="flex flex-col gap-5">
@@ -38,41 +34,9 @@ export default function BudgetPage() {
         }
       />
 
-      <div className="px-4">
-        <Panel className="flex flex-col gap-4 pt-6">
-          <SpendingGauge segments={segments} total={summary.expenses} limit={monthlyLimit} currency={currency} />
-
-          {summary.expenseByCategory.length > 0 ? (
-            <div className="flex flex-wrap justify-center gap-2">
-              {summary.expenseByCategory.map((c) => {
-                const category = categoryById.get(c.categoryId);
-                return (
-                  <CategoryChip key={c.categoryId} color={category?.color ?? 0} label={category?.name ?? "Other"} amount={c.total} currency={currency} />
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-center text-xs text-muted-foreground">No spending in {monthLabel(month)} yet.</p>
-          )}
-
-          <InfoRow className="justify-center">
-            {monthlyLimit !== null ? (
-              <>
-                Your monthly spending limit is {formatMoney(monthlyLimit, currency)}
-                {" · "}
-                <span className={over ? "text-expense" : "text-income"}>
-                  {over
-                    ? `${formatMoney(summary.expenses - monthlyLimit, currency)} over`
-                    : `${formatMoney(monthlyLimit - summary.expenses, currency)} left`}
-                </span>
-              </>
-            ) : (
-              <Link href="/budget/limits" className="underline underline-offset-2">
-                Set a monthly spending limit
-              </Link>
-            )}
-          </InfoRow>
-        </Panel>
+      <div className="flex flex-col gap-4 px-4">
+        <ChartCurrencyTabs />
+        <GaugeCard currency={chartCurrency} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 px-4">
@@ -93,5 +57,53 @@ export default function BudgetPage() {
         )}
       </section>
     </main>
+  );
+}
+
+function GaugeCard({ currency }: { currency: CurrencyCode }) {
+  const { data, month, categoryById } = useData();
+  const summary = useMonthSummary(month, currency);
+  const monthlyLimit = monthlyLimitFor(data.settings, currency);
+  const segments = summary.expenseByCategory.map((c) => ({
+    value: c.total,
+    color: categoryById.get(c.categoryId)?.color ?? 0,
+  }));
+  const over = monthlyLimit !== null && summary.expenses > monthlyLimit;
+
+  return (
+    <Panel className="flex flex-col gap-4 pt-5">
+      <SpendingGauge segments={segments} total={summary.expenses} limit={monthlyLimit} currency={currency} />
+
+      {summary.expenseByCategory.length > 0 ? (
+        <div className="flex flex-wrap justify-center gap-2">
+          {summary.expenseByCategory.map((c) => {
+            const category = categoryById.get(c.categoryId);
+            return (
+              <CategoryChip key={c.categoryId} color={category?.color ?? 0} label={category?.name ?? "Other"} amount={c.total} currency={currency} />
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-center text-xs text-muted-foreground">No spending in {monthLabel(month)} yet.</p>
+      )}
+
+      <InfoRow className="justify-center">
+        {monthlyLimit !== null ? (
+          <>
+            Your monthly spending limit is {formatMoney(monthlyLimit, currency)}
+            {" · "}
+            <span className={over ? "text-expense" : "text-income"}>
+              {over
+                ? `${formatMoney(summary.expenses - monthlyLimit, currency)} over`
+                : `${formatMoney(monthlyLimit - summary.expenses, currency)} left`}
+            </span>
+          </>
+        ) : (
+          <Link href="/budget/limits" className="underline underline-offset-2">
+            Set a monthly spending limit
+          </Link>
+        )}
+      </InfoRow>
+    </Panel>
   );
 }

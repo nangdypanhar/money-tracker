@@ -1,6 +1,6 @@
 import { Info } from "lucide-react";
 import { formatMoney, type Minor } from "@/lib/money/money";
-import type { CurrencyCode } from "@/lib/money/currency";
+import { CURRENCIES, type CurrencyCode } from "@/lib/money/currency";
 import { cn } from "@/lib/utils";
 import { paletteColor } from "./category-icon";
 
@@ -161,5 +161,17 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
       <h2 className="text-sm font-medium">{children}</h2>
       {action}
     </div>
+  );
+}
+
+/** "$ Dollar" / "៛ Riel" label that heads each currency block (dollar on top, riel below — never mixed). */
+export function CurrencyTag({ currency, className }: { currency: CurrencyCode; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground", className)}>
+      <span className="grid size-5 place-items-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+        {CURRENCIES[currency].symbol}
+      </span>
+      {CURRENCIES[currency].short}
+    </span>
   );
 }

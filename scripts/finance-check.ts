@@ -3,9 +3,10 @@
  *   pnpm check:finance
  */
 import assert from "node:assert/strict";
-import { accountBalance, budgetStatus, dailyTotals, goalBalance, totalExpenses, totalIncome, totalsByCategory, transferTotals, savingsRate } from "@/lib/finance/calculations";
-import { parseAmount, formatMoney, toInputString, percentChange } from "@/lib/money/money";
-import { monthRange, addMonths, daysInRange } from "@/lib/finance/dates";
+import { accountBalance, budgetStatus, dailyTotals, filterByCurrency, goalBalance, totalExpenses, totalIncome, totalsByCategory, transferTotals, savingsRate } from "@/lib/finance/calculations";
+import { parseAmount, formatMoney, toInputString, percentChange, formatAmountInput } from "@/lib/money/money";
+import { normalizeAppSettings } from "@/lib/db/settings";
+import { monthRange, addMonths, daysInRange, formatTime12 } from "@/lib/finance/dates";
 import { validateBackup } from "@/lib/backup/backup";
 import type { GoalEntry, Transaction } from "@/lib/finance/types";
 
@@ -65,6 +66,42 @@ assert.equal(toInputString(-5, "USD"), "-0.05");
 assert.equal(formatMoney(-123456, "USD"), "-$1,234.56");
 assert.equal(formatMoney(1050, "USD", { signed: true }), "+$10.50");
 assert.equal(percentChange(10, 0), null);
+
+// Riel: whole units, no decimals.
+assert.equal(parseAmount("150,000", "KHR"), 150000);
+assert.equal(parseAmount("1.5", "KHR"), null);
+assert.equal(formatMoney(150000, "KHR"), "៛150,000");
+assert.equal(toInputString(150000, "KHR"), "150000");
+// Live comma formatting in amount inputs.
+assert.equal(formatAmountInput("150000", "KHR"), "150,000");
+assert.equal(formatAmountInput("1234567.891", "USD"), "1,234,567.89");
+assert.equal(formatAmountInput("1234.", "USD"), "1,234.");
+assert.equal(formatAmountInput(".5", "USD"), "0.5");
+assert.equal(formatAmountInput("0012", "USD"), "12");
+assert.equal(formatAmountInput("12.5", "KHR"), "125");
+assert.equal(formatAmountInput("a1b2,3", "USD"), "123");
+assert.equal(parseAmount(formatAmountInput("1234567.89", "USD"), "USD"), 123456789);
+// Settings: old single monthly limit becomes a per-currency limit; bad values are dropped.
+assert.deepEqual(normalizeAppSettings({ currency: "USD", monthlyLimit: 500000 }), { currency: "USD", monthlyLimits: { USD: 500000 } });
+assert.deepEqual(normalizeAppSettings({ currency: "KHR", monthlyLimits: { USD: 100, KHR: 600000, XYZ: 5 } }), { currency: "KHR", monthlyLimits: { USD: 100, KHR: 600000 } });
+assert.deepEqual(normalizeAppSettings(undefined), { currency: "USD", monthlyLimits: {} });
+// Currencies are never summed together: a USD account and a KHR account report separately.
+const khr = { ...base("khr"), name: "Riel", kind: "cash" as const, currency: "KHR" as const, openingBalance: 0, archived: false };
+const fx: Transaction[] = [
+  { ...base("x1"), type: "transfer", date: "2026-10-10", fromAccountId: "bank", toAccountId: "khr", fromAmount: 50_00, toAmount: 205_000 },
+  { ...base("x2"), type: "expense", date: "2026-10-11", accountId: "khr", categoryId: "food", amount: 12_000 },
+];
+assert.equal(accountBalance(khr, fx), 205_000 - 12_000);
+assert.equal(accountBalance({ ...bank, openingBalance: 0 }, fx), -50_00);
+assert.equal(totalExpenses(filterByCurrency(fx, [bank, khr], "USD"), oct), 0);
+assert.equal(totalExpenses(filterByCurrency(fx, [bank, khr], "KHR"), oct), 12_000);
+
+// 12-hour time display.
+assert.equal(formatTime12("13:16"), "1:16 PM");
+assert.equal(formatTime12("00:05"), "12:05 AM");
+assert.equal(formatTime12("12:00"), "12:00 PM");
+assert.equal(formatTime12("09:30"), "9:30 AM");
+assert.equal(formatTime12("23:59"), "11:59 PM");
 
 // Dates: month boundaries incl. leap year.
 assert.deepEqual(monthRange("2028-02"), { start: "2028-02-01", end: "2028-02-29" });
