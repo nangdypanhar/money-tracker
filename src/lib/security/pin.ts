@@ -4,6 +4,10 @@
  */
 
 export const PIN_ITERATIONS = 310_000;
+/** New PINs are 4 or 6 digits (the user picks). */
+export const PIN_LENGTHS = [4, 6] as const;
+export type PinLength = (typeof PIN_LENGTHS)[number];
+/** Bounds for typing a PIN whose length isn't stored yet (PINs set before the 4/6 choice existed). */
 export const PIN_MIN_LENGTH = 4;
 export const PIN_MAX_LENGTH = 8;
 
@@ -15,8 +19,8 @@ export function isPinSupported(): boolean {
   return typeof crypto !== "undefined" && !!crypto.subtle;
 }
 
-export function isValidPin(pin: string): boolean {
-  return new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin);
+export function isValidPin(pin: string, length: PinLength): boolean {
+  return pin.length === length && /^\d+$/.test(pin);
 }
 
 async function derive(pin: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {

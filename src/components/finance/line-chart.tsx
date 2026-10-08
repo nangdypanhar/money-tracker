@@ -1,5 +1,5 @@
 import { formatMoney, type Minor } from "@/lib/money/money";
-import type { CurrencyCode } from "@/lib/money/currency";
+import { type CurrencyCode, minorDigits } from "@/lib/money/currency";
 
 export interface LineSeries {
   label: string;
@@ -28,7 +28,9 @@ function niceMax(value: number): number {
 
 /** Thin lines on dark with muted axis labels (sample: Report → Transfer). */
 export function LineChart({ series, xLabels, currency, height = 150 }: LineChartProps) {
-  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.values)));
+  // An empty month still gets a readable scale ($0–$100) instead of repeated "$0" labels.
+  const minScale = 100 * 10 ** minorDigits(currency);
+  const max = niceMax(Math.max(minScale, ...series.flatMap((s) => s.values)));
   const ticks = [1, 0.75, 0.5, 0.25, 0].map((f) => Math.round(max * f));
   const count = Math.max(...series.map((s) => s.values.length), 2);
 

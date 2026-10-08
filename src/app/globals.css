@@ -46,6 +46,8 @@
 
   /* Soft glow behind the top of each screen, and card elevation */
   --glow: #cbd8f3;
+  /* Phone status bar color. The top of each screen fades from exactly this color, so the bar and app blend. */
+  --status-bar: #d4def3;
   --card-shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 8px 24px -12px rgb(16 24 40 / 0.12);
 }
 
@@ -80,6 +82,7 @@
   --chart-6: #f5a64a;
 
   --glow: #1c3366;
+  --status-bar: #182a52;
   --card-shadow: none;
 }
 
@@ -132,6 +135,8 @@
   html {
     color-scheme: light;
     -webkit-tap-highlight-color: transparent;
+    /* Paint behind system bars / overscroll too, not just the body. */
+    background-color: var(--background);
   }
 
   html.dark {
@@ -150,9 +155,12 @@
     box-shadow: var(--card-shadow);
   }
 
-  /* Purple glow behind the top of each screen */
+  /* Glow behind the top of each screen. The top band starts at --status-bar so it continues the phone's
+     status bar seamlessly, then fades into the radial glow from the sample. */
   .header-glow {
-    background-image: radial-gradient(120% 60% at 50% 0%, var(--glow) 0%, transparent 70%);
+    background-image:
+      linear-gradient(180deg, var(--status-bar) 0, transparent 9rem),
+      radial-gradient(120% 60% at 50% 0%, var(--glow) 0%, transparent 70%);
   }
 
   .scrollbar-none {

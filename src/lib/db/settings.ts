@@ -20,6 +20,11 @@ export interface SecuritySettings {
   iterations: number;
   /** Lock again after the app has been in the background this long. */
   autoLockSeconds: number;
+  /**
+   * Digit count, so the lock screen can unlock as soon as the last digit is typed (like a phone lock screen).
+   * Missing for PINs set before this existed; it's saved on the next successful unlock.
+   */
+  pinLength?: number;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {

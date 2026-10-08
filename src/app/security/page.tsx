@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Field, useConfirm } from "@/components/app/form";
 import { ScreenHeader } from "@/components/app/screen-header";
-import { InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
+import { InfoRow, Panel, SectionTitle, Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,7 +12,7 @@ import { useData } from "@/features/data/data-provider";
 import { useLock } from "@/features/security/lock-provider";
 import { switchDataMode } from "@/lib/db/mode";
 import { deleteSetting, setSetting } from "@/lib/db/settings";
-import { hashPin, isPinSupported, isValidPin, PIN_MAX_LENGTH, PIN_MIN_LENGTH, verifyPin } from "@/lib/security/pin";
+import { hashPin, isPinSupported, isValidPin, PIN_MAX_LENGTH, type PinLength, verifyPin } from "@/lib/security/pin";
 
 const AUTO_LOCK = [
   { value: "0", label: "Immediately" },
@@ -28,16 +28,24 @@ export default function SecurityPage() {
   const [current, setCurrent] = useState("");
   const [pin, setPin] = useState("");
   const [repeat, setRepeat] = useState("");
+  const [length, setLength] = useState<PinLength>(security?.pinLength === 6 ? 6 : 4);
   const [busy, setBusy] = useState(false);
 
-  const pinInput = (value: string, onChange: (v: string) => void, id: string, label: string) => (
+  const chooseLength = (next: PinLength) => {
+    setLength(next);
+    setPin((p) => p.slice(0, next));
+    setRepeat((p) => p.slice(0, next));
+  };
+
+  const pinInput = (value: string, onChange: (v: string) => void, id: string, label: string, max: number = length) => (
     <Field label={label} htmlFor={id}>
       <Input
         id={id}
         type="password"
         inputMode="numeric"
         autoComplete="off"
-        maxLength={PIN_MAX_LENGTH}
+        maxLength={max}
+        placeholder={"•".repeat(max)}
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
         className="h-11 rounded-xl tracking-[0.4em]"
@@ -54,13 +62,13 @@ export default function SecurityPage() {
 
   async function savePin(e: React.FormEvent) {
     e.preventDefault();
-    if (!isValidPin(pin)) return toast.error(`PIN must be ${PIN_MIN_LENGTH}–${PIN_MAX_LENGTH} digits.`);
+    if (!isValidPin(pin, length)) return toast.error(`Enter a ${length}-digit PIN.`);
     if (pin !== repeat) return toast.error("PINs don't match.");
     setBusy(true);
     try {
       if (!(await checkCurrent())) return;
       const hashed = await hashPin(pin);
-      await setSetting("security", { ...hashed, autoLockSeconds: security?.autoLockSeconds ?? 60 });
+      await setSetting("security", { ...hashed, autoLockSeconds: security?.autoLockSeconds ?? 60, pinLength: pin.length });
       await reloadSecurity();
       setCurrent("");
       setPin("");
@@ -112,7 +120,17 @@ export default function SecurityPage() {
       <Panel className="flex flex-col gap-4">
         <SectionTitle>{security ? "Change PIN" : "Set up a PIN lock"}</SectionTitle>
         <form onSubmit={savePin} className="flex flex-col gap-3">
-          {security && pinInput(current, setCurrent, "pin-current", "Current PIN")}
+          {security && pinInput(current, setCurrent, "pin-current", "Current PIN", security?.pinLength ?? PIN_MAX_LENGTH)}
+          <Field label={security ? "New PIN length" : "PIN length"}>
+            <Segmented
+              value={String(length) as "4" | "6"}
+              onChange={(v) => chooseLength(Number(v) as PinLength)}
+              options={[
+                { value: "4", label: "4 digits" },
+                { value: "6", label: "6 digits" },
+              ]}
+            />
+          </Field>
           {pinInput(pin, setPin, "pin-new", security ? "New PIN" : "PIN")}
           {pinInput(repeat, setRepeat, "pin-repeat", "Repeat PIN")}
           <Button type="submit" disabled={busy} className="h-11 rounded-full">

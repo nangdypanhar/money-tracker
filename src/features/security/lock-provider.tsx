@@ -2,7 +2,7 @@
 
 import { Delete, LockKeyhole } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { getSetting, type SecuritySettings } from "@/lib/db/settings";
+import { getSetting, type SecuritySettings, setSetting } from "@/lib/db/settings";
 import { isPinSupported, lockoutSeconds, PIN_MAX_LENGTH, PIN_MIN_LENGTH, verifyPin } from "@/lib/security/pin";
 import { cn } from "@/lib/utils";
 
@@ -81,12 +81,21 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     <LockContext.Provider value={{ security, reloadSecurity, lockNow }}>
       {/* Don't render app content until we know whether a PIN is required. */}
       {checked && !(locked && security) ? children : null}
-      {checked && locked && security && <LockScreen security={security} onUnlock={() => setLocked(false)} />}
+      {checked && locked && security && <LockScreen security={security} onUnlock={() => setLocked(false)} onLearnLength={reloadSecurity} />}
     </LockContext.Provider>
   );
 }
 
-function LockScreen({ security, onUnlock }: { security: SecuritySettings; onUnlock: () => void }) {
+function LockScreen({
+  security,
+  onUnlock,
+  onLearnLength,
+}: {
+  security: SecuritySettings;
+  onUnlock: () => void;
+  onLearnLength: () => Promise<void>;
+}) {
+  const pinLength = security.pinLength;
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -113,6 +122,8 @@ function LockScreen({ security, onUnlock }: { security: SecuritySettings; onUnlo
     setChecking(false);
     if (ok) {
       writeFailed({ count: 0, at: 0 });
+      // PIN set before auto-unlock existed: remember its length so next time it unlocks on the last digit.
+      if (!pinLength) void setSetting("security", { ...security, pinLength: value.length }).then(onLearnLength);
       onUnlock();
       return;
     }
@@ -124,10 +135,24 @@ function LockScreen({ security, onUnlock }: { security: SecuritySettings; onUnlo
   };
 
   const press = (digit: string) => {
-    if (waiting > 0 || checking) return;
+    if (waiting > 0 || checking || pin.length >= (pinLength ?? PIN_MAX_LENGTH)) return;
     setError(null);
-    setPin((p) => (p.length < PIN_MAX_LENGTH ? p + digit : p));
+    const next = pin + digit;
+    setPin(next);
+    // Unlock as soon as the last digit is in — no OK needed.
+    if (pinLength && next.length === pinLength) void submit(next);
   };
+
+  // Physical keyboard: digits, Backspace, Enter.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (/^\d$/.test(e.key)) press(e.key);
+      else if (e.key === "Backspace") setPin((p) => p.slice(0, -1));
+      else if (e.key === "Enter") void submit(pin);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   return (
     <div className="header-glow fixed inset-0 z-[100] flex flex-col items-center justify-center gap-8 bg-background px-6">
@@ -136,8 +161,12 @@ function LockScreen({ security, onUnlock }: { security: SecuritySettings; onUnlo
           <LockKeyhole className="size-6" />
         </span>
         <h1 className="text-lg font-medium">Enter your PIN</h1>
-        <div className="flex h-4 gap-2.5" aria-live="polite" aria-label={`${pin.length} digits entered`}>
-          {Array.from({ length: Math.max(PIN_MIN_LENGTH, pin.length) }, (_, i) => (
+        <div
+          className={cn("flex h-4 gap-2.5", checking && "animate-pulse")}
+          aria-live="polite"
+          aria-label={`${pin.length} digits entered`}
+        >
+          {Array.from({ length: pinLength ?? Math.max(PIN_MIN_LENGTH, pin.length) }, (_, i) => (
             <span key={i} className={cn("size-3 rounded-full border border-ring", i < pin.length && "bg-primary")} />
           ))}
         </div>
@@ -156,13 +185,17 @@ function LockScreen({ security, onUnlock }: { security: SecuritySettings; onUnlo
           <Delete className="size-5" />
         </PadButton>
         <PadButton onClick={() => press("0")}>0</PadButton>
-        <PadButton
-          onClick={() => submit(pin)}
-          disabled={pin.length < PIN_MIN_LENGTH || waiting > 0 || checking}
-          className="bg-primary text-primary-foreground text-sm"
-        >
-          {checking ? "…" : "OK"}
-        </PadButton>
+        {pinLength ? (
+          <span aria-hidden />
+        ) : (
+          <PadButton
+            onClick={() => submit(pin)}
+            disabled={pin.length < PIN_MIN_LENGTH || waiting > 0 || checking}
+            className="bg-primary text-primary-foreground text-sm"
+          >
+            {checking ? "…" : "OK"}
+          </PadButton>
+        )}
       </div>
     </div>
   );

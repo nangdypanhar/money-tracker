@@ -87,6 +87,9 @@ in UI copy about what it protects.
 
 - Never store a PIN in plain text. Derive a hash with **PBKDF2 (Web Crypto)** + random salt + high
   iteration count; compare in constant-ish time.
+- PINs are **4 or 6 digits** (user's choice on the Security screen); `pinLength` is stored with the hash so
+  the lock screen unlocks on the last digit with no OK button. PINs saved before that field existed fall
+  back to an OK button and record their length on the next successful unlock.
 - Lock on app start and after a configurable inactivity timeout / when the app goes to background.
 - Rate-limit failed attempts (increasing delay). Do not wipe data on failed attempts unless the user
   explicitly enabled that option.

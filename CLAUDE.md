@@ -152,6 +152,11 @@ Neither theme uses pure white or near-black — the user found those too bright 
 
 Accent rule: never green or red (reserved for income/expense).
 
+**Phone status bar:** `--status-bar` (`#d4def3` light / `#182a52` dark, mirrored in `src/lib/theme.ts`) is
+the `theme-color`, and `.header-glow` starts from that exact color, so the bar and the screen top blend with
+no seam. `StatusBarColorSync` (theme provider) makes the bar follow the **in-app** theme, and a pre-paint
+script in `layout.tsx` sets it before React loads. Change both places together.
+
 **Type.** Poppins only. Headers ~20px/500, centered. Hero amounts large (~28–32px) and semibold with
 `tabular-nums` (the sample shows monospaced figures; we get aligned digits from Poppins tabular numerals
 rather than adding a mono font). Body 14px; secondary 12px muted.
@@ -163,8 +168,9 @@ rounded (`rounded-full`). Screen side padding 16px; card padding ~16–20px; gap
 
 - **Screen header:** circular ghost back button (left), centered title, optional pill action on the right
   ("Download ⤓").
-- **Month selector:** horizontally scrollable pills; the selected month is filled `primary`, the others
-  have a border. Edge items fade/clip.
+- **Month selector:** Jan–Dec pills for one year (no year suffix on pills); the selected month is filled
+  `primary`, the others have a border. Edge items fade/clip. A small "‹ 2025 ›" year switch appears only
+  when there's data from another year.
 - **Spending gauge:** semicircle of rounded "tick" segments colored by category share, remaining segments
   dim; total in the center ("Total spend $4,100.00").
 - **Category chips:** pill with colored dot + name + amount, wrapping in rows.
