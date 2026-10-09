@@ -43,8 +43,8 @@ interface BaseRecord {
 - Prefer soft delete for user data so a future Google Drive sync can propagate deletions. A permanent
   "purge" may exist but must be explicit.
 - Money fields follow the `financial-rules` skill (integer minor units + currency).
-- Planned stores (adjust when implemented): `accounts`, `categories`, `transactions`, `budgets`, `goals`,
-  `goalEntries`, `settings`, `meta`. Add indexes for common queries (e.g. transactions by `date`,
+- Stores: `accounts`, `categories`, `transactions`, `budgets`, `goals`, `goalEntries`, `shoppingItems` (v2), `shoppingLists` (v3),
+  `settings`, `meta`. Add indexes for common queries (e.g. transactions by `date`,
   `accountId`, `categoryId`).
 
 ## 3. Migrations

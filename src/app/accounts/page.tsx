@@ -9,9 +9,9 @@ import { ACCOUNT_ICONS } from "@/components/finance/category-icon";
 import { InfoRow, Panel, Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useData } from "@/features/data/data-provider";
+import { BalanceToggle, useBalanceVisibility } from "@/features/privacy/balance-visibility";
 import { accountsRepo, transactionsRepo } from "@/lib/db/repositories";
 import { accountBalance } from "@/lib/finance/calculations";
 import { toLocalDate, toLocalTime } from "@/lib/finance/dates";
@@ -30,6 +30,7 @@ const KINDS: { value: AccountKind; label: string }[] = [
 export default function AccountsPage() {
   const { data, currencies } = useData();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
+  const { balance: showBalance, hidden } = useBalanceVisibility();
 
   const rows = useMemo(
     () => data.accounts.map((a) => ({ account: a, balance: accountBalance(a, data.transactions, data.goalEntries) })),
@@ -55,10 +56,13 @@ export default function AccountsPage() {
       />
 
       <Panel>
-        <p className="text-sm text-foreground/90">Total across accounts</p>
+        <div className="-my-3 -mr-3 flex items-center justify-between">
+          <p className="text-sm text-foreground/90">Total across accounts</p>
+          <BalanceToggle />
+        </div>
         {totals.map(({ code, total }, i) => (
           <p key={code} className={cn("font-semibold tabular-nums", i === 0 ? "text-3xl" : "mt-1 text-xl")}>
-            {formatMoney(total, code)}
+            {showBalance(total, code)}
           </p>
         ))}
         <InfoRow className="mt-2">Money in savings goals is shown on the Savings goals screen.</InfoRow>
@@ -84,7 +88,7 @@ export default function AccountsPage() {
                     {account.archived && " · Archived"}
                   </span>
                 </span>
-                <span className={cn("text-sm font-medium tabular-nums", balance < 0 && "text-expense")}>{formatMoney(balance, account.currency)}</span>
+                <span className={cn("text-sm font-medium tabular-nums", balance < 0 && !hidden && "text-expense")}>{showBalance(balance, account.currency)}</span>
               </button>
             </li>
           );
@@ -112,9 +116,12 @@ function AccountForm({ account, balance, onDone }: { account: Account | null; ba
   const [name, setName] = useState(account?.name ?? "");
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? "bank");
   const [opening, setOpening] = useState(account ? toInputString(account.openingBalance, currency) : "");
-  const [negativeOpening, setNegativeOpening] = useState((account?.openingBalance ?? 0) < 0);
   const [archived, setArchived] = useState(account?.archived ?? false);
   const [actual, setActual] = useState("");
+
+  // A credit card's opening amount is what's owed (stored negative). Existing accounts keep their saved sign
+  // unless their type changes, so editing never flips a balance by surprise.
+  const owed = account && kind === account.kind ? account.openingBalance < 0 : kind === "credit";
 
   const used = account
     ? data.transactions.some((t) =>
@@ -127,7 +134,7 @@ function AccountForm({ account, balance, onDone }: { account: Account | null; ba
     if (!name.trim()) return toast.error("Give the account a name.");
     const openingValue = opening.trim() ? parseAmount(opening.replace("-", ""), currency) : 0;
     if (openingValue === null) return toast.error("Opening balance isn't a valid amount.");
-    const openingBalance = negativeOpening ? -openingValue : openingValue;
+    const openingBalance = owed ? -openingValue : openingValue;
 
     try {
       if (account) {
@@ -194,26 +201,17 @@ function AccountForm({ account, balance, onDone }: { account: Account | null; ba
         />
       </Field>
       <Field label="Type">
-        <Select value={kind} onValueChange={(v) => setKind(v as AccountKind)}>
-          <SelectTrigger className="h-11! w-full rounded-xl">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {KINDS.map((k) => (
-              <SelectItem key={k.value} value={k.value}>
-                {k.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Segmented value={kind} onChange={setKind} options={KINDS} />
       </Field>
-      <Field label="Opening balance" hint="What the account held when you started tracking. Not counted as income.">
-        <div className="flex items-center gap-2">
-          <AmountInput value={opening} onChange={setOpening} currency={currency} className="flex-1" />
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={negativeOpening} onCheckedChange={setNegativeOpening} /> Owed
-          </label>
-        </div>
+      <Field
+        label={owed ? "Amount owed" : "Opening balance"}
+        hint={
+          owed
+            ? "What you owed on this card when you started tracking. Not counted as spending."
+            : "What the account held when you started tracking. Not counted as income."
+        }
+      >
+        <AmountInput value={opening} onChange={setOpening} currency={currency} />
       </Field>
       {account && (
         <label className="flex items-center justify-between rounded-xl border bg-background/40 px-3 py-2.5 text-sm">

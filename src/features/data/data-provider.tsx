@@ -7,6 +7,8 @@ import {
   categoriesRepo,
   goalEntriesRepo,
   goalsRepo,
+  shoppingItemsRepo,
+  shoppingListsRepo,
   transactionsRepo,
 } from "@/lib/db/repositories";
 import { type DataMode, getDataMode } from "@/lib/db/mode";
@@ -17,7 +19,7 @@ import { CURRENCY_CODES, type CurrencyCode, isCurrencyCode } from "@/lib/money/c
 const CHART_CURRENCY_KEY = "moneytrack:chart-currency";
 import { type MonthKey, monthKey } from "@/lib/finance/dates";
 import { seedDemoIfNeeded } from "./demo-data";
-import type { Account, Budget, Category, Goal, GoalEntry, Transaction } from "@/lib/finance/types";
+import type { Account, Budget, Category, Goal, GoalEntry, ShoppingItem, ShoppingList, Transaction } from "@/lib/finance/types";
 
 export interface AppData {
   accounts: Account[];
@@ -26,6 +28,8 @@ export interface AppData {
   budgets: Budget[];
   goals: Goal[];
   goalEntries: GoalEntry[];
+  shoppingItems: ShoppingItem[];
+  shoppingLists: ShoppingList[];
   settings: AppSettings;
 }
 
@@ -61,6 +65,8 @@ const EMPTY: AppData = {
   budgets: [],
   goals: [],
   goalEntries: [],
+  shoppingItems: [],
+  shoppingLists: [],
   settings: DEFAULT_APP_SETTINGS,
 };
 
@@ -68,13 +74,15 @@ const DataContext = createContext<DataContextValue | null>(null);
 
 async function loadAll(): Promise<AppData> {
   // Live records only; soft-deleted ones are kept in IndexedDB for backup/sync.
-  const [accounts, categories, transactions, budgets, goals, goalEntries, settings] = await Promise.all([
+  const [accounts, categories, transactions, budgets, goals, goalEntries, shoppingItems, shoppingLists, settings] = await Promise.all([
     accountsRepo.list(),
     categoriesRepo.list(),
     transactionsRepo.list(),
     budgetsRepo.list(),
     goalsRepo.list(),
     goalEntriesRepo.list(),
+    shoppingItemsRepo.list(),
+    shoppingListsRepo.list(),
     getSetting("app"),
   ]);
   return {
@@ -89,6 +97,8 @@ async function loadAll(): Promise<AppData> {
     budgets,
     goals: goals.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     goalEntries: goalEntries.sort((a, b) => b.date.localeCompare(a.date)),
+    shoppingItems: shoppingItems.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    shoppingLists: shoppingLists.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     settings: normalizeAppSettings(settings),
   };
 }

@@ -21,7 +21,7 @@ import {
   totalIncome,
   transferTotals,
 } from "@/lib/finance/calculations";
-import { addMonths, daysInRange, monthKey, monthRange, parseLocalDate, toLocalDate } from "@/lib/finance/dates";
+import { addMonths, daysInRange, formatDate, monthKey, monthRange, toLocalDate } from "@/lib/finance/dates";
 import type { CurrencyCode } from "@/lib/money/currency";
 import { formatMoney, sumMinor } from "@/lib/money/money";
 
@@ -103,7 +103,7 @@ function CurrencyReport({ currency }: { currency: CurrencyCode }) {
   }, [data.transactions, data.accounts, currency, month, summary.range]);
 
   const rate = savingsRate(summary.income, summary.expenses);
-  const xLabels = report.days.map((d) => parseLocalDate(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+  const xLabels = report.days.map((d) => formatDate(d, { weekday: false, year: false }));
 
   return (
     <>

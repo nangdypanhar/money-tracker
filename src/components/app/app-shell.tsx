@@ -2,6 +2,7 @@
 
 import { Toaster } from "@/components/ui/sonner";
 import { DataProvider, useData } from "@/features/data/data-provider";
+import { BalanceVisibilityProvider } from "@/features/privacy/balance-visibility";
 import { PwaProvider } from "@/features/pwa/pwa-provider";
 import { LockProvider } from "@/features/security/lock-provider";
 import { TransactionSheetProvider } from "@/features/transactions/transaction-sheet";
@@ -12,6 +13,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <PwaProvider>
     <DataProvider>
+      <BalanceVisibilityProvider>
       <LockProvider>
         <TransactionSheetProvider>
           {/* Phone-width column on larger screens, matching the sample's mobile layout */}
@@ -21,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <BottomNav />
         </TransactionSheetProvider>
       </LockProvider>
+      </BalanceVisibilityProvider>
       <Toaster position="top-center" />
     </DataProvider>
     </PwaProvider>

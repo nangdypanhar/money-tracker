@@ -12,6 +12,7 @@ import {
   PiggyBank,
   RefreshCw,
   ShieldCheck,
+  ShoppingCart,
   Tags,
   Trash2,
 } from "lucide-react";
@@ -32,6 +33,7 @@ import { DB_NAMES, type DataMode, restartApp, switchDataMode } from "@/lib/db/mo
 const LINKS = [
   { href: "/accounts", label: "Accounts", description: "Cash, bank, e-wallet, credit", icon: Landmark },
   { href: "/goals", label: "Savings goals", description: "Set money aside for a target", icon: PiggyBank },
+  { href: "/shopping", label: "Shopping list", description: "Things you need or want to buy", icon: ShoppingCart },
   { href: "/budget/limits", label: "Budget limits", description: "Monthly and per-category limits", icon: Gauge },
   { href: "/categories", label: "Categories", description: "Income and expense categories", icon: Tags },
   { href: "/budget/report", label: "Reports", description: "Income, cash flow, CSV export", icon: ChartNoAxesCombined },

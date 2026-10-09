@@ -79,7 +79,7 @@ MoneyTrack theme and Poppins afterwards. `shadcn add <component>` is fine once a
 ```
 src/
   app/                    # routes: / (home), /transactions, /budget (+ /breakdown, /report, /limits),
-                          # /more, /accounts, /goals, /categories, /backup, /security; manifest.ts
+                          # /more, /accounts, /goals, /shopping, /categories, /backup, /security; manifest.ts
   components/
     ui/                   # shadcn/ui generated (radix-nova) — keep close to upstream
     app/                  # shell: AppShell, BottomNav, ScreenHeader, MonthSelector, form helpers
@@ -88,6 +88,7 @@ src/
     data/                 # DataProvider (loads IndexedDB into React state, shared month), summaries, demo data
     transactions/         # add/edit transaction drawer (TransactionSheetProvider)
     security/             # LockProvider + PIN pad
+    privacy/              # hide/show balances (eye toggle; localStorage UI preference)
   lib/
     money/                # currency table, integer minor-unit parsing/formatting
     finance/              # domain types, dates, pure calculations (balances, budgets, goals, reports)
@@ -148,6 +149,7 @@ Neither theme uses pure white or near-black — the user found those too bright 
 | `income`           | `#12a058`   | `#2fd47a`   | `+$13.82`, positive deltas                                  |
 | `expense`          | `#d93025`   | `#f0473e`   | `-$10.33`, negative deltas, expense badge                   |
 | `glow`             | `#cbd8f3`   | `#1c3366`   | `.header-glow` radial glow behind the top of each screen    |
+| `masked`           | `#b4bdcc`   | `#b4bdcc`   | blurred hidden balances — same light grey in both themes, never black |
 | `chart-1..6`       | blue, green, orange, cyan, violet, amber (slightly deeper in light) | category dots, bars, gauge |
 
 Accent rule: never green or red (reserved for income/expense).
@@ -185,10 +187,25 @@ rounded (`rounded-full`). Screen side padding 16px; card padding ~16–20px; gap
   "Completed" subtitle; right side: signed colored amount + time. Grouped under "Today" etc.
 - **Line chart:** thin colored lines on dark, muted axis labels; legend tiles below ("Total transfer in /
   out").
-- **Currencies (ABA-style):** Home, History tiles, Accounts, Goals, and Budget limits stack a Dollar block on
-  top and a Riel block below (`CurrencyTag` heads each). The **chart screens** (Budget, Breakdown, Report) use
-  a `ChartCurrencyTabs` $/៛ tab instead, to save space; the choice is shared and remembered on the device.
+- **Currencies (ABA-style):** Home, History tiles, Accounts, and Goals stack a Dollar block on top and a Riel
+  block below (`CurrencyTag` heads each). The **chart screens** (Budget, Breakdown, Report) and **Budget
+  limits** use a `ChartCurrencyTabs` $/៛ tab instead, to save space; the choice is shared and remembered on the device.
   Accounts are chosen as tappable cards showing each balance in its currency.
+- **Hide balances:** an eye button (`BalanceToggle`) blurs balances and totals (Home, Accounts, Goals, account
+  picker) via `useBalanceVisibility().balance(...)` — it blurs a fake placeholder figure, never the real one. Use it for new balance displays; history amounts stay visible.
+- **Shopping list** (`/shopping`): items are plans (need / want, optional expected price, optional named
+  list) and never touch balances or spending; ticking one off offers "Record expense", which prefills the
+  transaction sheet. List chips filter; "Group by" Priority / List / Day / Week / Month (weeks start Monday,
+  overdue first) comes from the pure `groupShoppingItems` in `lib/finance/shopping.ts`.
+- **Choices in forms:** an account is always chosen with `AccountPicker` (`components/app/account-picker.tsx`,
+  tappable cards with balances); small fixed choices (type, currency, priority, auto-lock) use `Segmented`
+  pills. No dropdowns (`ui/select.tsx` is kept but unused) — reach for one only for long lists.
+- **Dates** are picked with `DateField` (`components/app/date-field.tsx`): tap to open an inline calendar,
+  quick picks (past set for records, future set for plans), or the keyboard icon to type day-first
+  ("15/10", "15/10/2026"). Don't use a bare `<input type="date">`.
+- **Date display:** day before month, via `formatDate` in `lib/finance/dates.ts` — "Sat, 17 Nov 2026"
+  ("Saturday, 17 Nov 2026" in the date field; year dropped where it's the current year in lists/groups).
+  Don't call `toLocaleDateString` for dates directly.
 - **Times** are stored "HH:mm" (24-hour, sorts correctly) and shown 12-hour (`formatTime12`: "1:16 PM").
 - **Bottom nav:** floating, rounded pill bar centered above the home indicator, 4 icons
   (home, calendar, chart, profile); active item is a filled `primary` circle/pill.

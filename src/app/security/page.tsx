@@ -7,7 +7,6 @@ import { ScreenHeader } from "@/components/app/screen-header";
 import { InfoRow, Panel, SectionTitle, Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useData } from "@/features/data/data-provider";
 import { useLock } from "@/features/security/lock-provider";
 import { switchDataMode } from "@/lib/db/mode";
@@ -16,9 +15,9 @@ import { hashPin, isPinSupported, isValidPin, PIN_MAX_LENGTH, type PinLength, ve
 
 const AUTO_LOCK = [
   { value: "0", label: "Immediately" },
-  { value: "60", label: "After 1 minute" },
-  { value: "300", label: "After 5 minutes" },
-  { value: "900", label: "After 15 minutes" },
+  { value: "60", label: "1 min" },
+  { value: "300", label: "5 min" },
+  { value: "900", label: "15 min" },
 ];
 
 export default function SecurityPage() {
@@ -148,18 +147,7 @@ export default function SecurityPage() {
       {mode === "real" && security && isPinSupported() && (
         <Panel className="flex flex-col gap-3">
           <SectionTitle>Auto-lock</SectionTitle>
-          <Select value={String(security.autoLockSeconds)} onValueChange={setAutoLock}>
-            <SelectTrigger className="h-11! w-full rounded-xl">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {AUTO_LOCK.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Segmented value={String(security.autoLockSeconds)} onChange={setAutoLock} options={AUTO_LOCK} />
           <p className="text-xs text-muted-foreground">How long MoneyTrack can stay in the background before asking for the PIN again.</p>
         </Panel>
       )}

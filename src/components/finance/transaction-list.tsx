@@ -2,7 +2,7 @@
 
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Equal } from "lucide-react";
 import { useData } from "@/features/data/data-provider";
-import { formatTime12, parseLocalDate, toLocalDate } from "@/lib/finance/dates";
+import { formatDate, formatTime12, toLocalDate } from "@/lib/finance/dates";
 import type { Transaction } from "@/lib/finance/types";
 import { formatMoney } from "@/lib/money/money";
 import type { CurrencyCode } from "@/lib/money/currency";
@@ -74,7 +74,7 @@ export function TransactionRow({ transaction, onSelect }: { transaction: Transac
       <button
         type="button"
         onClick={() => onSelect?.(transaction)}
-        className="flex w-full items-center gap-3 rounded-2xl py-2.5 text-left transition-colors hover:bg-card/60"
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-card/60"
       >
         <span className="relative grid size-11 shrink-0 place-items-center rounded-full border bg-card">
           {view.icon}
@@ -105,12 +105,7 @@ function dayLabel(date: string): string {
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   if (date === toLocalDate(today)) return "Today";
   if (date === toLocalDate(yesterday)) return "Yesterday";
-  return parseLocalDate(date).toLocaleDateString("en-US", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: date.slice(0, 4) === String(today.getFullYear()) ? undefined : "numeric",
-  });
+  return formatDate(date, { year: date.slice(0, 4) !== String(today.getFullYear()) });
 }
 
 /** Transactions grouped under "Today", "Yesterday", "Mon, 4 Aug"… (expects newest first). */
@@ -132,8 +127,9 @@ export function TransactionList({
     <div className="flex flex-col gap-4">
       {groups.map((g) => (
         <section key={g.date}>
-          <h3 className="mb-1 text-sm font-medium">{dayLabel(g.date)}</h3>
-          <ul className="flex flex-col">
+          <h3 className="mb-2 px-1 text-xs font-medium text-muted-foreground">{dayLabel(g.date)}</h3>
+          {/* One border per day; rows inside are split by thin lines. */}
+          <ul className="flex flex-col divide-y overflow-hidden rounded-2xl border">
             {g.items.map((t) => (
               <TransactionRow key={t.id} transaction={t} onSelect={onSelect} />
             ))}

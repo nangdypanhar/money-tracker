@@ -2,8 +2,10 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AccountPicker } from "@/components/app/account-picker";
+import { DateField } from "@/components/app/date-field";
 import { AmountInput, Field, FormDrawer, useConfirm } from "@/components/app/form";
-import { ACCOUNT_ICONS, CategoryIcon, paletteColor } from "@/components/finance/category-icon";
+import { CategoryIcon, paletteColor } from "@/components/finance/category-icon";
 import { Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,17 +14,23 @@ import { useData } from "@/features/data/data-provider";
 import { deleteTransaction, saveTransfer, transactionsRepo } from "@/lib/db/repositories";
 import { FEES_CATEGORY_ID } from "@/lib/db/seed";
 import { toLocalDate, toLocalTime } from "@/lib/finance/dates";
-import { accountBalance } from "@/lib/finance/calculations";
-import type { Account, ExpenseTransaction, Transaction } from "@/lib/finance/types";
+import type { ExpenseTransaction, Transaction } from "@/lib/finance/types";
 import { CURRENCIES, type CurrencyCode, minorDigits } from "@/lib/money/currency";
-import { formatMoney, parseAmount, toInputString } from "@/lib/money/money";
+import { formatMoney, type Minor, parseAmount, toInputString } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
 
 type FormType = "expense" | "income" | "transfer";
 
 interface SheetContextValue {
   /** Open the drawer to add a new transaction, or to edit an existing one. */
-  openTransaction: (options?: { type?: FormType; edit?: Transaction; date?: string }) => void;
+  openTransaction: (options?: { type?: FormType; edit?: Transaction; date?: string; prefill?: Prefill }) => void;
+}
+
+/** Starting values for a new transaction (e.g. a shopping list item that was bought). */
+export interface Prefill {
+  currency: CurrencyCode;
+  amount?: Minor;
+  note?: string;
 }
 
 const SheetContext = createContext<SheetContextValue | null>(null);
@@ -53,12 +61,14 @@ export function TransactionSheetProvider({ children }: { children: React.ReactNo
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [initialType, setInitialType] = useState<FormType>("expense");
   const [initialDate, setInitialDate] = useState<string | undefined>();
+  const [prefill, setPrefill] = useState<Prefill | undefined>();
   const [formKey, setFormKey] = useState(0);
 
   const openTransaction = useCallback<SheetContextValue["openTransaction"]>((options) => {
     setEditing(options?.edit ?? null);
     setInitialType(options?.type ?? "expense");
     setInitialDate(options?.date);
+    setPrefill(options?.prefill);
     setFormKey((k) => k + 1);
     setOpen(true);
   }, []);
@@ -75,7 +85,7 @@ export function TransactionSheetProvider({ children }: { children: React.ReactNo
     <SheetContext.Provider value={value}>
       {children}
       <FormDrawer open={open} onOpenChange={setOpen} title={title}>
-        {open && <TransactionForm key={formKey} editing={editing} initialType={initialType} initialDate={initialDate} onDone={() => setOpen(false)} />}
+        {open && <TransactionForm key={formKey} editing={editing} initialType={initialType} initialDate={initialDate} prefill={prefill} onDone={() => setOpen(false)} />}
       </FormDrawer>
     </SheetContext.Provider>
   );
@@ -85,11 +95,13 @@ function TransactionForm({
   editing,
   initialType,
   initialDate,
+  prefill,
   onDone,
 }: {
   editing: Transaction | null;
   initialType: FormType;
   initialDate?: string;
+  prefill?: Prefill;
   onDone: () => void;
 }) {
   const { data, refresh, accountById, currency: viewCurrency } = useData();
@@ -103,9 +115,16 @@ function TransactionForm({
       : undefined;
 
   const currencyOf = (id: string) => accountById.get(id)?.currency ?? viewCurrency;
-  const [form, setForm] = useState<FormState>(() =>
-    initialState(editing, initialType, (activeAccounts.find((a) => a.currency === viewCurrency) ?? activeAccounts[0])?.id ?? "", existingFee, currencyOf, initialDate),
-  );
+  const [form, setForm] = useState<FormState>(() => {
+    const preferred = prefill?.currency ?? viewCurrency;
+    const defaultAccount = activeAccounts.find((a) => !a.archived && a.currency === preferred) ?? activeAccounts[0];
+    const state = initialState(editing, initialType, defaultAccount?.id ?? "", existingFee, currencyOf, initialDate);
+    if (editing || !prefill) return state;
+    // Only carry the amount over when the chosen account is in the prefill's currency.
+    const amount =
+      prefill.amount !== undefined && defaultAccount?.currency === prefill.currency ? toInputString(prefill.amount, prefill.currency) : "";
+    return { ...state, amount, note: prefill.note ?? "" };
+  });
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   if (editing?.type === "adjustment") {
@@ -284,7 +303,9 @@ function TransactionForm({
               ))}
             </div>
           </Field>
-          {form.type === "expense" && (
+          {/* Refunds aren't offered for new entries (users found it confusing); the switch only shows on an
+              existing refund so it can be turned off. Stored refunds still count correctly everywhere. */}
+          {form.type === "expense" && editing?.type === "expense" && editing.isRefund && (
             <label className="flex items-center justify-between rounded-xl border bg-background/40 px-3 py-2.5 text-sm">
               <span>
                 Refund
@@ -296,14 +317,12 @@ function TransactionForm({
         </>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Date" htmlFor="tx-date">
-          <Input id="tx-date" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} className="h-11 rounded-xl" />
-        </Field>
-        <Field label="Time" htmlFor="tx-time">
-          <Input id="tx-time" type="time" value={form.time} onChange={(e) => set("time", e.target.value)} className="h-11 rounded-xl" />
-        </Field>
-      </div>
+      <Field label="Date" htmlFor="tx-date">
+        <DateField id="tx-date" value={form.date} onChange={(v) => set("date", v)} quick="past" />
+      </Field>
+      <Field label="Time" htmlFor="tx-time">
+        <Input id="tx-time" type="time" value={form.time} onChange={(e) => set("time", e.target.value)} className="h-11 rounded-xl" />
+      </Field>
 
       <Field label="Note" htmlFor="tx-note">
         <Input id="tx-note" value={form.note} maxLength={120} onChange={(e) => set("note", e.target.value)} placeholder="e.g. Withdraw from ATM" className="h-11 rounded-xl" />
@@ -319,62 +338,6 @@ function TransactionForm({
       )}
       {dialog}
     </form>
-  );
-}
-
-/**
- * Tappable account cards (dollar accounts first, then riel) showing each balance in its own currency.
- * The amount's currency follows the chosen account.
- */
-function AccountPicker({
-  value,
-  onChange,
-  accounts,
-  exclude,
-  label,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-  accounts: Account[];
-  exclude?: string;
-  label: string;
-}) {
-  const { data, currencies } = useData();
-  const options = accounts
-    .filter((a) => a.id !== exclude)
-    .sort((a, b) => currencies.indexOf(a.currency) - currencies.indexOf(b.currency));
-  return (
-    <div role="radiogroup" aria-label={label} className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 py-0.5">
-      {options.map((account) => {
-        const Icon = ACCOUNT_ICONS[account.kind];
-        const selected = account.id === value;
-        const balance = accountBalance(account, data.transactions, data.goalEntries);
-        return (
-          <button
-            key={account.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(account.id)}
-            className={cn(
-              "flex min-w-32 shrink-0 flex-col items-start gap-1.5 rounded-2xl border p-3 text-left transition-colors",
-              selected ? "border-ring bg-primary/20 ring-1 ring-ring" : "bg-background/40 hover:bg-accent",
-            )}
-          >
-            <span className="flex w-full items-center gap-1.5 text-xs text-muted-foreground">
-              <Icon className="size-3.5 shrink-0" />
-              <span className="truncate">{account.name}</span>
-              <span className="ml-auto rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
-                {CURRENCIES[account.currency].symbol}
-              </span>
-            </span>
-            <span className={cn("text-sm font-medium tabular-nums", balance < 0 && "text-expense")}>
-              {formatMoney(balance, account.currency)}
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

@@ -6,9 +6,10 @@ import assert from "node:assert/strict";
 import { accountBalance, budgetStatus, dailyTotals, filterByCurrency, goalBalance, totalExpenses, totalIncome, totalsByCategory, transferTotals, savingsRate } from "@/lib/finance/calculations";
 import { parseAmount, formatMoney, toInputString, percentChange, formatAmountInput } from "@/lib/money/money";
 import { normalizeAppSettings } from "@/lib/db/settings";
-import { monthRange, addMonths, daysInRange, formatTime12 } from "@/lib/finance/dates";
+import { monthRange, addMonths, addDays, daysInRange, formatDate, formatTime12, parseDateInput, startOfWeek } from "@/lib/finance/dates";
 import { validateBackup } from "@/lib/backup/backup";
-import type { GoalEntry, Transaction } from "@/lib/finance/types";
+import { estimateTotals, groupShoppingItems, isOverdue, shoppingSummary, sortShoppingItems } from "@/lib/finance/shopping";
+import type { GoalEntry, ShoppingItem, Transaction } from "@/lib/finance/types";
 
 const base = (id: string) => ({ id, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" });
 const bank = { ...base("bank"), name: "Bank", kind: "bank" as const, currency: "USD" as const, openingBalance: 100_00, archived: false };
@@ -115,4 +116,80 @@ assert.equal(validateBackup({ ...good, schemaVersion: 99 }).ok, false);
 assert.equal(validateBackup({ ...good, data: { ...good.data, accounts: [bank] } }).ok, false);
 assert.equal(validateBackup({ ...good, data: { ...good.data, transactions: [{ ...tx[0], amount: 1.5 }] } }).ok, false);
 assert.equal(validateBackup({ app: "other" }).ok, false);
+// v1 backups (before the shopping list) still import, with an empty list.
+const v1 = validateBackup(good);
+assert.ok(v1.ok && v1.backup.data.shoppingItems.length === 0 && v1.backup.data.shoppingLists.length === 0 && v1.backup.schemaVersion === 3);
+const item = { ...base("s1"), name: "Rice", priority: "need" as const, currency: "USD" as const, estimate: 28_00 };
+const v2 = { ...good, schemaVersion: 2, data: { ...good.data, shoppingItems: [item] } };
+assert.equal(validateBackup(v2).ok, true);
+const groceries = { ...base("l1"), name: "Groceries", color: 1 };
+const v3 = { ...good, schemaVersion: 3, data: { ...good.data, shoppingItems: [{ ...item, listId: "l1" }], shoppingLists: [groceries] } };
+assert.equal(validateBackup(v3).ok, true);
+assert.equal(validateBackup({ ...v3, data: { ...v3.data, shoppingLists: [] } }).ok, false); // item points to a missing list
+assert.equal(validateBackup({ ...v3, data: { ...v3.data, shoppingLists: undefined } }).ok, false);
+assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: [{ ...item, estimate: 1.5 }] } }).ok, false);
+assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: [{ ...item, priority: "maybe" }] } }).ok, false);
+assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: undefined } }).ok, false);
+
+// Shopping list: open items only, per currency; never touches balances or spending.
+const shopping: ShoppingItem[] = [
+  item,
+  { ...base("s2"), name: "Gas", priority: "need", currency: "KHR", estimate: 60_000 },
+  { ...base("s3"), name: "Earbuds", priority: "want", currency: "USD", estimate: 79_00, dueDate: "2026-10-01" },
+  { ...base("s4"), name: "Mug", priority: "want", currency: "USD" },
+  { ...base("s5"), name: "Case", priority: "need", currency: "USD", estimate: 12_00, boughtAt: "2026-10-02T00:00:00Z" },
+  { ...base("s6"), name: "Gone", priority: "need", currency: "USD", estimate: 500_00, deletedAt: "2026-10-02T00:00:00Z" },
+];
+assert.deepEqual(shoppingSummary(shopping, "USD"), { open: 4, needs: 2, needEstimate: 28_00, wantEstimate: 79_00 });
+assert.deepEqual(shoppingSummary(shopping, "KHR"), { open: 4, needs: 2, needEstimate: 60_000, wantEstimate: 0 });
+assert.deepEqual(sortShoppingItems(shopping.slice(0, 4)).map((i) => i.id), ["s1", "s2", "s3", "s4"]);
+assert.equal(isOverdue(shopping[2], "2026-10-02"), true);
+assert.equal(isOverdue(shopping[2], "2026-10-01"), false);
+assert.equal(isOverdue(shopping[4], "2027-01-01"), false);
+
+// Grouping: overdue first, undated last; weeks start Monday; bought tab newest first.
+const today = "2026-10-14"; // a Wednesday
+const plan: ShoppingItem[] = [
+  { ...base("p1"), name: "A", priority: "want", currency: "USD", estimate: 5_00, dueDate: "2026-10-14" },
+  { ...base("p2"), name: "B", priority: "need", currency: "USD", estimate: 7_00, dueDate: "2026-10-15", listId: "l1" },
+  { ...base("p3"), name: "C", priority: "need", currency: "KHR", estimate: 4_000, dueDate: "2026-10-12" },
+  { ...base("p4"), name: "D", priority: "need", currency: "USD", dueDate: "2026-10-20" },
+  { ...base("p5"), name: "E", priority: "need", currency: "USD", dueDate: "2026-11-02" },
+  { ...base("p6"), name: "F", priority: "want", currency: "USD" },
+];
+const labels = (by: Parameters<typeof groupShoppingItems>[1]) =>
+  groupShoppingItems(plan, by, today, [groceries]).map((g) => `${g.label}:${g.items.map((i) => i.id).join(",")}`);
+assert.deepEqual(labels("day"), ["Overdue:p3", "Today:p1", "Tomorrow:p2", "Tue, 20 Oct:p4", "Mon, 2 Nov:p5", "No date:p6"]);
+assert.deepEqual(labels("week"), ["Overdue:p3", "This week:p2,p1", "Next week:p4", "Week of 2 Nov:p5", "No date:p6"]);
+assert.deepEqual(labels("month"), ["Overdue:p3", "This month:p2,p4,p1", "Next month:p5", "No date:p6"]);
+assert.deepEqual(labels("list"), ["Groceries:p2", "No list:p3,p4,p5,p1,p6"]);
+assert.deepEqual(labels("priority"), ["Needs:p3,p2,p4,p5", "Wants:p1,p6"]);
+assert.equal(startOfWeek("2026-10-18"), "2026-10-12"); // Sunday belongs to the week starting Monday
+assert.equal(addDays("2026-12-31", 1), "2027-01-01");
+// One date style, day before month.
+assert.equal(formatDate("2026-11-17"), "Tue, 17 Nov 2026");
+assert.equal(formatDate("2026-11-21", { weekday: "long" }), "Saturday, 21 Nov 2026");
+assert.equal(formatDate("2026-11-21", { year: false }), "Sat, 21 Nov");
+assert.equal(formatDate("2026-11-21", { weekday: false, year: false }), "21 Nov");
+// Typed dates: day first, real calendar dates only.
+assert.equal(parseDateInput("15/10", today), "2026-10-15");
+assert.equal(parseDateInput("5/1/2027", today), "2027-01-05");
+assert.equal(parseDateInput("15-10-26", today), "2026-10-15");
+assert.equal(parseDateInput("2026-10-15", today), "2026-10-15");
+assert.equal(parseDateInput("29/02/2028", today), "2028-02-29");
+assert.equal(parseDateInput("29/02/2027", today), null);
+assert.equal(parseDateInput("31/04", today), null);
+assert.equal(parseDateInput("10/15/2026", today), null); // month-first isn't accepted
+assert.equal(parseDateInput("tomorrow", today), null);
+// Subtotals stay per currency.
+assert.deepEqual(estimateTotals(plan), [{ currency: "USD", total: 12_00 }, { currency: "KHR", total: 4_000 }]);
+const doneItems: ShoppingItem[] = [
+  { ...base("b1"), name: "X", priority: "need", currency: "USD", boughtAt: new Date(2026, 9, 1, 10).toISOString() },
+  { ...base("b2"), name: "Y", priority: "need", currency: "USD", boughtAt: new Date(2026, 9, 13, 10).toISOString(), dueDate: "2026-01-01" },
+];
+assert.deepEqual(
+  groupShoppingItems(doneItems, "day", today, [], { newestFirst: true }).map((g) => g.label),
+  ["Yesterday", "Thu, 1 Oct"], // bought items are never "Overdue"
+);
+
 console.log("All finance checks passed");

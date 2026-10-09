@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Plus } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Plus, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { ACCOUNT_ICONS, GOAL_ICON } from "@/components/finance/category-icon";
@@ -8,12 +8,14 @@ import { CurrencyTag, Delta, EmptyState, Panel, SectionTitle, StackedBar } from 
 import { TransactionList } from "@/components/finance/transaction-list";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/features/data/data-provider";
+import { BalanceToggle, useBalanceVisibility } from "@/features/privacy/balance-visibility";
 import { useMonthSummary } from "@/features/data/use-month-summary";
 import { useTransactionSheet } from "@/features/transactions/transaction-sheet";
 import { accountBalance, goalBalance } from "@/lib/finance/calculations";
 import { switchDataMode } from "@/lib/db/mode";
 import { monthlyLimitFor } from "@/lib/db/settings";
 import { monthKey } from "@/lib/finance/dates";
+import { shoppingSummary } from "@/lib/finance/shopping";
 import type { CurrencyCode } from "@/lib/money/currency";
 import { formatMoney, percentChange, sumMinor } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
@@ -21,6 +23,7 @@ import { cn } from "@/lib/utils";
 export default function HomePage() {
   const { data, currencies } = useData();
   const { openTransaction } = useTransactionSheet();
+  const { balance: showBalance, hidden } = useBalanceVisibility();
 
   // All active accounts, dollar accounts first then riel (ABA style).
   const accounts = useMemo(
@@ -52,7 +55,10 @@ export default function HomePage() {
       </header>
 
       <Panel className="flex flex-col gap-4 p-5">
-        <p className="text-sm text-foreground/90">Total balance</p>
+        <div className="-my-3 -mr-3 flex items-center justify-between">
+          <p className="text-sm text-foreground/90">Total balance</p>
+          <BalanceToggle />
+        </div>
         {/* Dollar on top, riel below — each total only includes that currency's accounts. */}
         <div className="flex flex-col divide-y divide-border">
           {currencies.map((code) => {
@@ -63,10 +69,10 @@ export default function HomePage() {
             return (
               <div key={code} className="flex flex-col gap-0.5 py-2.5 first:pt-0 last:pb-0">
                 <CurrencyTag currency={code} />
-                <p className={cn("text-3xl font-semibold tabular-nums", total < 0 && "text-expense")}>{formatMoney(total, code)}</p>
+                <p className={cn("text-3xl font-semibold tabular-nums", total < 0 && !hidden && "text-expense")}>{showBalance(total, code)}</p>
                 {saved > 0 && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <GOAL_ICON className="size-3.5" /> {formatMoney(saved, code)} set aside in savings goals
+                    <GOAL_ICON className="size-3.5" /> {showBalance(saved, code)} set aside in savings goals
                   </p>
                 )}
               </div>
@@ -81,8 +87,8 @@ export default function HomePage() {
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Icon className="size-3.5" /> {account.name}
                 </span>
-                <span className={balance < 0 ? "text-sm font-medium text-expense tabular-nums" : "text-sm font-medium tabular-nums"}>
-                  {formatMoney(balance, account.currency)}
+                <span className={balance < 0 && !hidden ? "text-sm font-medium text-expense tabular-nums" : "text-sm font-medium tabular-nums"}>
+                  {showBalance(balance, account.currency)}
                 </span>
               </Link>
             );
@@ -120,7 +126,9 @@ export default function HomePage() {
         </Panel>
       </Link>
 
-      <section className="flex flex-col gap-2">
+      <ShoppingCard />
+
+      <section className="flex flex-col gap-3">
         <SectionTitle
           action={
             recent.length > 0 && (
@@ -191,6 +199,35 @@ function BudgetRow({ currency }: { currency: CurrencyCode }) {
           : `${formatMoney(summary.expenses, currency)} spent · tap to set a monthly limit`}
       </p>
     </div>
+  );
+}
+
+/** Shortcut to the shopping list while something is left to buy. */
+function ShoppingCard() {
+  const { data, currencies } = useData();
+  const summaries = currencies.map((code) => ({ code, ...shoppingSummary(data.shoppingItems, code) }));
+  const open = summaries[0]?.open ?? 0;
+  if (open === 0) return null;
+  const needs = summaries[0].needs;
+  const estimates = summaries.filter((s) => s.needEstimate > 0).map((s) => formatMoney(s.needEstimate, s.code));
+  return (
+    <Link href="/shopping" className="block">
+      <Panel className="flex items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full border bg-background/50">
+          <ShoppingCart className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">
+            {open} {open === 1 ? "item" : "items"} to buy
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {needs > 0 ? `${needs} needed` : "Only wants left"}
+            {estimates.length > 0 && ` · about ${estimates.join(" + ")}`}
+          </span>
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Panel>
+    </Link>
   );
 }
 

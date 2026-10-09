@@ -5,6 +5,8 @@ import type {
   ExpenseTransaction,
   Goal,
   GoalEntry,
+  ShoppingItem,
+  ShoppingList,
   Transaction,
   TransferTransaction,
 } from "@/lib/finance/types";
@@ -17,6 +19,8 @@ export const transactionsRepo = createRepository<Transaction>("transactions");
 export const budgetsRepo = createRepository<Budget>("budgets");
 export const goalsRepo = createRepository<Goal>("goals");
 export const goalEntriesRepo = createRepository<GoalEntry>("goalEntries");
+export const shoppingItemsRepo = createRepository<ShoppingItem>("shoppingItems");
+export const shoppingListsRepo = createRepository<ShoppingList>("shoppingLists");
 
 type FeeInput = Omit<NewRecord<ExpenseTransaction>, "transferId">;
 
@@ -62,5 +66,26 @@ export async function deleteTransaction(target: Transaction, all: readonly Trans
   await withTransaction(["transactions"], "readwrite", (tx) => {
     const store = tx.objectStore("transactions");
     for (const t of [target, ...linked]) store.put({ ...t, deletedAt: now, updatedAt: now });
+  });
+}
+
+/** Soft-delete several shopping list items at once (e.g. "Clear bought"). */
+export async function deleteShoppingItems(items: readonly ShoppingItem[]): Promise<void> {
+  const now = new Date().toISOString();
+  await withTransaction(["shoppingItems"], "readwrite", (tx) => {
+    const store = tx.objectStore("shoppingItems");
+    for (const item of items) store.put({ ...item, deletedAt: now, updatedAt: now });
+  });
+}
+
+/** Soft-delete a shopping list; its items stay on the shopping list without a list. One transaction. */
+export async function deleteShoppingList(list: ShoppingList, items: readonly ShoppingItem[]): Promise<void> {
+  const now = new Date().toISOString();
+  await withTransaction(["shoppingLists", "shoppingItems"], "readwrite", (tx) => {
+    tx.objectStore("shoppingLists").put({ ...list, deletedAt: now, updatedAt: now });
+    const store = tx.objectStore("shoppingItems");
+    for (const item of items) {
+      if (item.listId === list.id) store.put({ ...item, listId: undefined, updatedAt: now });
+    }
   });
 }

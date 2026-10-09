@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { ChartCurrencyTabs } from "@/components/app/chart-currency-tabs";
 import { AmountInput } from "@/components/app/form";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { CategoryIcon, paletteColor } from "@/components/finance/category-icon";
-import { CurrencyTag, InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
+import { InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/features/data/data-provider";
 import { budgetsRepo } from "@/lib/db/repositories";
@@ -16,9 +17,12 @@ import { formatMoney, parseAmount, sumMinor, toInputString } from "@/lib/money/m
 
 type Inputs = Record<string, string>; // categoryId → amount text
 
-/** Monthly + per-category limits, one section per currency (dollar on top, riel below), one Save. */
+/**
+ * Monthly + per-category limits. A $/៛ tab shows one currency at a time to save space; edits in both tabs are
+ * kept and one Save writes them all.
+ */
 export default function BudgetLimitsPage() {
-  const { data, refresh, currencies } = useData();
+  const { data, refresh, currencies, chartCurrency } = useData();
   const expenseCategories = data.categories.filter((c) => c.kind === "expense");
   const budgetFor = (currency: CurrencyCode, categoryId: string): Budget | undefined =>
     data.budgets.find((b) => b.currency === currency && b.categoryIds.length === 1 && b.categoryIds[0] === categoryId);
@@ -92,14 +96,16 @@ export default function BudgetLimitsPage() {
   return (
     <main className="flex flex-col gap-5 px-4">
       <ScreenHeader title="Budget limits" back className="px-0" />
+      <ChartCurrencyTabs />
 
-      {currencies.map((code) => {
+      {currencies
+        .filter((code) => code === chartCurrency)
+        .map((code) => {
         const categoryInputs = limits[code] ?? {};
         const categorySum = sumMinor(Object.values(categoryInputs).map((t) => parse(t, code) ?? 0));
         const monthlyValue = parse(monthly[code], code);
         return (
           <section key={code} className="flex flex-col gap-3">
-            {currencies.length > 1 && <CurrencyTag currency={code} />}
             <Panel className="flex flex-col gap-3">
               <SectionTitle>Monthly spending limit</SectionTitle>
               <AmountInput

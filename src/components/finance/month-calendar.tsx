@@ -1,5 +1,5 @@
 import type { DayTotals } from "@/lib/finance/calculations";
-import { daysInRange, monthRange, parseLocalDate, toLocalDate, type MonthKey } from "@/lib/finance/dates";
+import { daysInRange, formatDate, monthRange, parseLocalDate, toLocalDate, type MonthKey } from "@/lib/finance/dates";
 import { type CurrencyCode, minorDigits } from "@/lib/money/currency";
 import { formatMoney, type Minor } from "@/lib/money/money";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,7 @@ export function MonthCalendar({ month, rows, selected, onSelect }: MonthCalendar
               onClick={() => onSelect(isSelected ? null : date)}
               aria-pressed={isSelected}
               aria-label={[
-                parseLocalDate(date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+                formatDate(date, { weekday: "long" }),
                 ...lines.map((l) => `spent ${formatMoney(l.spent, l.currency)}`),
                 hasIncome ? "has income" : "",
               ]

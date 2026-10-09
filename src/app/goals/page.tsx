@@ -4,14 +4,16 @@ import { PiggyBank, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AmountInput, Field, FormDrawer, useConfirm } from "@/components/app/form";
+import { AccountPicker } from "@/components/app/account-picker";
+import { DateField } from "@/components/app/date-field";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { EmptyState, InfoRow, Panel, Segmented } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useData } from "@/features/data/data-provider";
+import { BalanceToggle, useBalanceVisibility } from "@/features/privacy/balance-visibility";
 import { goalEntriesRepo, goalsRepo } from "@/lib/db/repositories";
-import { accountBalance, goalBalance, goalProgress } from "@/lib/finance/calculations";
+import { goalBalance, goalProgress } from "@/lib/finance/calculations";
 import { parseLocalDate, toLocalDate } from "@/lib/finance/dates";
 import type { Goal } from "@/lib/finance/types";
 import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/money/currency";
@@ -21,6 +23,7 @@ export default function GoalsPage() {
   const { data, currency } = useData();
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
   const [moving, setMoving] = useState<Goal | null>(null);
+  const { balance: showBalance } = useBalanceVisibility();
   // One total per currency that has goals — never mixed.
   const goalCurrencies = [...new Set(data.goals.map((g) => g.currency))];
   const totals = (goalCurrencies.length ? goalCurrencies : [currency]).map((code) => ({
@@ -42,10 +45,13 @@ export default function GoalsPage() {
       />
 
       <Panel>
-        <p className="text-sm text-foreground/90">Total saved</p>
+        <div className="-my-3 -mr-3 flex items-center justify-between">
+          <p className="text-sm text-foreground/90">Total saved</p>
+          <BalanceToggle />
+        </div>
         {totals.map(({ code, total }, i) => (
           <p key={code} className={i === 0 ? "text-3xl font-semibold tabular-nums" : "mt-1 text-xl font-semibold tabular-nums"}>
-            {formatMoney(total, code)}
+            {showBalance(total, code)}
           </p>
         ))}
         <InfoRow className="mt-2">Saving moves money out of an account into a goal. It isn&apos;t spending.</InfoRow>
@@ -67,7 +73,7 @@ export default function GoalsPage() {
                   <button type="button" onClick={() => setEditing(goal)} className="min-w-0 flex-1 text-left">
                     <span className="block truncate text-sm font-medium">{goal.name}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {formatMoney(saved, goal.currency)} of {formatMoney(goal.targetAmount, goal.currency)}
+                      {showBalance(saved, goal.currency)} of {formatMoney(goal.targetAmount, goal.currency)}
                       {goal.targetDate && ` · by ${parseLocalDate(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
                     </span>
                   </button>
@@ -147,7 +153,7 @@ function GoalForm({ goal, onDone }: { goal: Goal | null; onDone: () => void }) {
         <AmountInput value={target} onChange={setTarget} currency={currency} />
       </Field>
       <Field label="Target date (optional)" htmlFor="goal-date">
-        <Input id="goal-date" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className="h-11 rounded-xl" />
+        <DateField id="goal-date" value={targetDate} onChange={setTargetDate} optional placeholder="No target date" />
       </Field>
       <Button type="submit" className="h-12 rounded-full text-base">
         {goal ? "Save" : "Create goal"}
@@ -173,8 +179,6 @@ function MoveMoneyForm({ goal, onDone }: { goal: Goal; onDone: () => void }) {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(toLocalDate(new Date()));
   const saved = goalBalance(goal, data.goalEntries);
-  const account = data.accounts.find((a) => a.id === accountId);
-  const available = account ? accountBalance(account, data.transactions, data.goalEntries) : 0;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -200,25 +204,11 @@ function MoveMoneyForm({ goal, onDone }: { goal: Goal; onDone: () => void }) {
         className="justify-center"
       />
       <AmountInput large value={amount} onChange={setAmount} currency={goal.currency} aria-label="Amount" />
-      <Field
-        label={kind === "contribution" ? "From account" : "To account"}
-        hint={account ? `${account.name} balance: ${formatMoney(available, goal.currency)}` : undefined}
-      >
-        <Select value={accountId || undefined} onValueChange={setAccountId}>
-          <SelectTrigger className="h-11! w-full rounded-xl">
-            <SelectValue placeholder="Choose account" />
-          </SelectTrigger>
-          <SelectContent>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <Field label={kind === "contribution" ? "From account" : "To account"}>
+        <AccountPicker label={kind === "contribution" ? "From account" : "To account"} value={accountId} onChange={setAccountId} accounts={accounts} />
       </Field>
       <Field label="Date" htmlFor="goal-entry-date">
-        <Input id="goal-entry-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
+        <DateField id="goal-entry-date" value={date} onChange={setDate} quick="past" />
       </Field>
       <InfoRow>
         {kind === "contribution"

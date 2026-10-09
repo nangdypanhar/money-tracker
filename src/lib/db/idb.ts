@@ -5,7 +5,7 @@
 
 import { DB_NAMES, getDataMode } from "./mode";
 
-export const DB_VERSION = 1;
+export const DB_VERSION = 3;
 
 export const STORES = [
   "accounts",
@@ -14,6 +14,8 @@ export const STORES = [
   "budgets",
   "goals",
   "goalEntries",
+  "shoppingItems",
+  "shoppingLists",
   "settings",
   "meta",
 ] as const;
@@ -42,6 +44,14 @@ const migrations: Migration[] = [
 
     db.createObjectStore("settings", { keyPath: "key" });
     db.createObjectStore("meta", { keyPath: "key" });
+  },
+  // v1 → v2: shopping list (new empty store; existing data untouched)
+  (db) => {
+    db.createObjectStore("shoppingItems", { keyPath: "id" });
+  },
+  // v2 → v3: named shopping lists (new empty store; items without a list stay as they are)
+  (db) => {
+    db.createObjectStore("shoppingLists", { keyPath: "id" });
   },
 ];
 

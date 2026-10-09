@@ -8,7 +8,7 @@ import { DEFAULT_CASH_ACCOUNT_ID, DEFAULT_KHR_CASH_ACCOUNT_ID, FEES_CATEGORY_ID 
 import { getMeta } from "@/lib/db/settings";
 import { newId } from "@/lib/id";
 import { addMonths, monthKey, monthRange, toLocalDate } from "@/lib/finance/dates";
-import type { Account, Budget, Goal, GoalEntry, Transaction } from "@/lib/finance/types";
+import type { Account, Budget, Goal, GoalEntry, ShoppingItem, ShoppingList, Transaction } from "@/lib/finance/types";
 import type { Minor } from "@/lib/money/money";
 
 /** Small deterministic PRNG so demo data looks the same every time. */
@@ -126,7 +126,25 @@ async function writeDemoData(cashAccountId: string | undefined): Promise<void> {
     ...base(), name: "", categoryIds: [categoryId], currency: "USD", limit: cents(limit), period: "monthly",
   }));
 
-  await withTransaction(["accounts", "transactions", "goals", "goalEntries", "budgets", "settings", "meta"], "readwrite", (tx) => {
+  const inDays = (n: number) => toLocalDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n));
+  const listStamp = (n: number) => new Date(now.getTime() + n).toISOString();
+  const groceries: ShoppingList = { ...base(), createdAt: listStamp(1), name: "Groceries", color: 1 };
+  const home: ShoppingList = { ...base(), createdAt: listStamp(2), name: "Home", color: 0 };
+  const party: ShoppingList = { ...base(), createdAt: listStamp(3), name: "Birthday party", color: 4 };
+  const shoppingItems: ShoppingItem[] = [
+    { ...base(), name: "Rice 25kg", priority: "need", listId: groceries.id, currency: "USD", estimate: cents(28), dueDate: inDays(1) },
+    { ...base(), name: "Eggs & vegetables", priority: "need", listId: groceries.id, currency: "KHR", estimate: 25_000, dueDate: today },
+    { ...base(), name: "Cooking gas refill", priority: "need", listId: home.id, currency: "KHR", estimate: 60_000, dueDate: inDays(-1), note: "Shop near the market" },
+    { ...base(), name: "School shoes", priority: "need", currency: "USD", estimate: cents(35), dueDate: inDays(10) },
+    { ...base(), name: "Cake", priority: "need", listId: party.id, currency: "USD", estimate: cents(25), dueDate: inDays(18) },
+    { ...base(), name: "Balloons & candles", priority: "want", listId: party.id, currency: "KHR", estimate: 20_000, dueDate: inDays(17) },
+    { ...base(), name: "Wireless earbuds", priority: "want", currency: "USD", estimate: cents(79), dueDate: inDays(40) },
+    { ...base(), name: "Iced coffee maker", priority: "want", listId: home.id, currency: "USD" },
+    { ...base(), name: "Dish soap", priority: "need", listId: home.id, currency: "KHR", estimate: 8_000, boughtAt: stamp },
+    { ...base(), name: "Phone case", priority: "need", currency: "USD", estimate: cents(12), boughtAt: stamp },
+  ];
+
+  await withTransaction(["accounts", "transactions", "goals", "goalEntries", "budgets", "shoppingItems", "shoppingLists", "settings", "meta"], "readwrite", (tx) => {
     tx.objectStore("meta").put({ key: "demoSeeded", value: true });
     const accounts = tx.objectStore("accounts");
     accounts.put(bank);
@@ -138,6 +156,8 @@ async function writeDemoData(cashAccountId: string | undefined): Promise<void> {
     tx.objectStore("goals").put(goal);
     for (const e of goalEntries) if (e.date <= today) tx.objectStore("goalEntries").put(e);
     for (const b of budgets) tx.objectStore("budgets").put(b);
+    for (const list of [groceries, home, party]) tx.objectStore("shoppingLists").put(list);
+    for (const item of shoppingItems) tx.objectStore("shoppingItems").put(item);
     tx.objectStore("settings").put({ key: "app", value: { currency: "USD", monthlyLimits: { USD: cents(5000), KHR: 600_000 } }, updatedAt: stamp });
   });
 }

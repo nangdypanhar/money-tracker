@@ -24,9 +24,9 @@ ask before changing behavior.
 - Use `Number.isSafeInteger` to guard amounts.
 - Supported currencies (`src/lib/money/currency.ts`): **USD** (2 digits) and **KHR** riel (0 digits — whole
   riel, as used in practice). Each account and goal has one currency; it can't change once it has history.
-- **Dollar on top, riel below (user's request, ABA-style):** Home, History tiles, Accounts, Goals, and Budget
-  limits show a block per currency in `currencies` from `useData()` (only currencies with active accounts, USD
-  first). The chart screens (Budget, Breakdown, Report) show one currency at a time via a $/៛ tab
+- **Dollar on top, riel below (user's request, ABA-style):** Home, History tiles, Accounts, and Goals show a
+  block per currency in `currencies` from `useData()` (only currencies with active accounts, USD
+  first). The chart screens (Budget, Breakdown, Report) and Budget limits show one currency at a time via a $/៛ tab
   (`chartCurrency`). Each block only includes that currency's accounts — `useMonthSummary(month, currency)`,
   `settings.monthlyLimits[currency]`, budgets with that `currency`. Never add the blocks together.
 - Default accounts: **Cash** (USD) and **Cash ៛** (KHR, added once — also to older installs).
@@ -53,11 +53,15 @@ Rules:
   counted as spending but the moved amount is not.
 - **Cross-currency transfers** store both `fromAmount` and `toAmount`. There is no automatic FX in v1;
   the user enters what actually arrived.
-- **Opening balance** is a property of the account, not an income transaction.
+- **Opening balance** is a property of the account, not an income transaction. For a **credit card** the
+  form asks for the "Amount owed" and stores it negative (no "owed" switch — the user found it confusing);
+  existing accounts keep their saved sign unless their type changes.
 - **Adjustments** (reconciling to the real bank balance) change the balance but are excluded from income,
   expense, budgets, and reports.
 - **Refunds** reduce spending: model as an `expense` with `isRefund: true` (counted negatively in its
-  category) rather than as income. Confirm with the user before changing this.
+  category) rather than as income. Confirm with the user before changing this. The UI no longer offers a
+  Refund switch for new entries (the user found it confusing); stored refunds still count everywhere, and the
+  switch only appears when editing an existing refund.
 - Every income/expense has a category. Transfers and adjustments have no spending category.
 - The transaction date is a **local calendar date** (`YYYY-MM-DD`) plus optional time; `createdAt`/
   `updatedAt` are ISO timestamps for auditing and future sync. Period filters use the local date.

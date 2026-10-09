@@ -12,6 +12,9 @@ no account or backend required.
 - **Transfers** — move money between accounts (never counted as income or expense)
 - **Budgets** — monthly limits per category with progress and over-budget states
 - **Savings goals** — targets, contributions, withdrawals, progress
+- **Shopping list** — things you need (required) or want to buy, in named lists, grouped by priority, list,
+  day, week, or month
+- **Hide balances** — eye button blurs balances ABA-style; remembered on the device
 - **Reports** — income vs. expenses, category breakdowns, net cash flow, per-currency totals
 - **Backup & restore** — export/import a versioned JSON file
 - **Security** — PIN app lock
@@ -102,6 +105,14 @@ Detailed rules live in:
   your bank — adjustments never count as income or spending.
 - **Budgets** (Budget tab → ⚙): a monthly spending limit plus optional per-category limits.
 - **Savings goals** (More → Savings goals): add or withdraw money; it moves between an account and the goal.
+- **Shopping list** (More → Shopping list, or the card on Home): mark items *Need* or *Want* and put them in
+  lists (tap **+ List**; tap a selected list again to edit it). *Group by* Priority, List, Day, Week, or Month,
+  using each item's "When to buy" date. Ticking one off doesn't change any balance — tap *Record expense* on
+  the toast to log the purchase.
+- **Dates**: tap a date field for a calendar, use a quick pick (Today, Tomorrow…), or tap ⌨ to type it
+  day-first (15/10/2026).
+- **Hide balances** (eye on Home, Accounts, Savings goals): blurs balances and totals; transaction history
+  stays visible.
 - **Reports** (Budget → Report): income by category, cash flow, savings rate; **Download** exports the month as CSV.
 - **Backup** (More → Backup & restore): export/import a JSON file. Restoring replaces all data on the device.
 - **Demo / my data** (More → Data): switch between sample data and your own. **Reset demo** restores the

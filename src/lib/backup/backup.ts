@@ -8,14 +8,17 @@ import {
   categoriesRepo,
   goalEntriesRepo,
   goalsRepo,
+  shoppingItemsRepo,
+  shoppingListsRepo,
   transactionsRepo,
 } from "@/lib/db/repositories";
 import { type AppSettings, getSetting, normalizeAppSettings } from "@/lib/db/settings";
 import { withTransaction } from "@/lib/db/idb";
-import type { Account, Budget, Category, Goal, GoalEntry, Transaction } from "@/lib/finance/types";
+import type { Account, Budget, Category, Goal, GoalEntry, ShoppingItem, ShoppingList, Transaction } from "@/lib/finance/types";
 import { isCurrencyCode } from "@/lib/money/currency";
 
-export const BACKUP_SCHEMA_VERSION = 1;
+/** v2 added `shoppingItems`; v3 added `shoppingLists`. */
+export const BACKUP_SCHEMA_VERSION = 3;
 
 export interface BackupData {
   accounts: Account[];
@@ -24,6 +27,8 @@ export interface BackupData {
   budgets: Budget[];
   goals: Goal[];
   goalEntries: GoalEntry[];
+  shoppingItems: ShoppingItem[];
+  shoppingLists: ShoppingList[];
   /** App preferences only; the PIN is never exported. */
   settings: AppSettings;
 }
@@ -38,13 +43,15 @@ export interface BackupFile {
 
 export async function buildBackup(): Promise<BackupFile> {
   // Includes soft-deleted records so restore (and later sync) stays faithful.
-  const [accounts, categories, transactions, budgets, goals, goalEntries, settings] = await Promise.all([
+  const [accounts, categories, transactions, budgets, goals, goalEntries, shoppingItems, shoppingLists, settings] = await Promise.all([
     accountsRepo.listIncludingDeleted(),
     categoriesRepo.listIncludingDeleted(),
     transactionsRepo.listIncludingDeleted(),
     budgetsRepo.listIncludingDeleted(),
     goalsRepo.listIncludingDeleted(),
     goalEntriesRepo.listIncludingDeleted(),
+    shoppingItemsRepo.listIncludingDeleted(),
+    shoppingListsRepo.listIncludingDeleted(),
     getSetting("app"),
   ]);
   return {
@@ -52,7 +59,17 @@ export async function buildBackup(): Promise<BackupFile> {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     encrypted: false,
-    data: { accounts, categories, transactions, budgets, goals, goalEntries, settings: normalizeAppSettings(settings) },
+    data: {
+      accounts,
+      categories,
+      transactions,
+      budgets,
+      goals,
+      goalEntries,
+      shoppingItems,
+      shoppingLists,
+      settings: normalizeAppSettings(settings),
+    },
   };
 }
 
@@ -89,10 +106,13 @@ export function validateBackup(json: unknown): ValidationResult {
     return fail("This backup was made by a newer version of MoneyTrack. Update the app and try again.");
   }
   if (json.encrypted) return fail("Encrypted backups aren't supported yet.");
-  const data = json.data;
-  if (!isObject(data)) return fail("The backup has no data.");
+  if (!isObject(json.data)) return fail("The backup has no data.");
+  // Upgrade older backups step by step: v1 had no shopping list, v2 had no named lists.
+  let data: Record<string, unknown> = json.data;
+  if (json.schemaVersion < 2) data = { ...data, shoppingItems: [] };
+  if (json.schemaVersion < 3) data = { ...data, shoppingLists: [] };
 
-  const lists = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries"] as const;
+  const lists = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries", "shoppingItems", "shoppingLists"] as const;
   for (const key of lists) {
     if (!Array.isArray(data[key])) return fail(`The backup is missing "${key}".`);
     if (!(data[key] as unknown[]).every((r) => isObject(r) && checkBase(r))) return fail(`Some ${key} records are malformed.`);
@@ -104,6 +124,9 @@ export function validateBackup(json: unknown): ValidationResult {
   const budgets = data.budgets as Record<string, unknown>[];
   const goals = data.goals as Record<string, unknown>[];
   const goalEntries = data.goalEntries as Record<string, unknown>[];
+  const shoppingItems = data.shoppingItems as Record<string, unknown>[];
+  const shoppingLists = data.shoppingLists as Record<string, unknown>[];
+  const shoppingListIds = new Set(shoppingLists.map((l) => l.id));
 
   const accountIds = new Set(accounts.map((a) => a.id));
   const categoryIds = new Set(categories.map((c) => c.id));
@@ -150,10 +173,26 @@ export function validateBackup(json: unknown): ValidationResult {
     }
   }
 
+  for (const l of shoppingLists) {
+    if (!isString(l.name) || !Number.isInteger(l.color)) return fail("A shopping list is invalid.");
+  }
+  for (const s of shoppingItems) {
+    if (
+      !isString(s.name) ||
+      (s.priority !== "need" && s.priority !== "want") ||
+      !isString(s.currency) ||
+      !isCurrencyCode(s.currency) ||
+      (s.estimate !== undefined && !isAmount(s.estimate)) ||
+      (s.dueDate !== undefined && !isDate(s.dueDate)) ||
+      (s.listId !== undefined && !shoppingListIds.has(s.listId))
+    ) {
+      return fail("A shopping list item is invalid.");
+    }
+  }
+
   // Older backups stored one `monthlyLimit`; normalizing converts it to the per-currency shape.
   const safeSettings: AppSettings = normalizeAppSettings(data.settings);
 
-  // Schema upgraders for older backups go here (v1 is the first version).
   return {
     ok: true,
     backup: {
@@ -169,7 +208,7 @@ export function validateBackup(json: unknown): ValidationResult {
 /** Replace all data with the backup, atomically. The PIN (security setting) is kept. */
 export async function restoreBackup(backup: BackupFile): Promise<void> {
   const { data } = backup;
-  const stores = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries"] as const;
+  const stores = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries", "shoppingItems", "shoppingLists"] as const;
   await withTransaction([...stores, "settings", "meta"], "readwrite", (tx) => {
     for (const store of stores) {
       const os = tx.objectStore(store);
@@ -186,7 +225,7 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
  * Default categories and the Cash account are re-created on the next app start.
  */
 export async function eraseAllData(): Promise<void> {
-  const stores = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries", "meta"] as const;
+  const stores = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries", "shoppingItems", "shoppingLists", "meta"] as const;
   await withTransaction([...stores, "settings"], "readwrite", (tx) => {
     for (const store of stores) tx.objectStore(store).clear();
     tx.objectStore("settings").delete("app");

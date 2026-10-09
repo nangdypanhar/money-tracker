@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useData } from "@/features/data/data-provider";
 import { useTransactionSheet } from "@/features/transactions/transaction-sheet";
 import { dailyTotals, filterByCurrency, totalExpenses, totalIncome } from "@/lib/finance/calculations";
-import { inRange, monthLabel, monthRange, parseLocalDate } from "@/lib/finance/dates";
+import { formatDate, inRange, monthLabel, monthRange } from "@/lib/finance/dates";
 import type { Transaction } from "@/lib/finance/types";
 import { formatMoney } from "@/lib/money/money";
 
@@ -67,7 +67,7 @@ export default function TransactionsPage() {
   }, [data.transactions, range, day, filter, query, categoryById, accountById]);
 
   const dayLabel = day
-    ? parseLocalDate(day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    ? formatDate(day)
     : null;
 
   return (

@@ -109,6 +109,35 @@ export interface GoalEntry extends BaseRecord {
   note?: string;
 }
 
+/** A named group of shopping items ("Groceries", "Birthday party"). */
+export interface ShoppingList extends BaseRecord {
+  name: string;
+  /** Index into the chart palette (chart-1..6). */
+  color: number;
+}
+
+/** "need" = required item; "want" = nice to have. */
+export type ShoppingPriority = "need" | "want";
+
+/**
+ * Something the user plans to buy. A plan only: it never changes a balance and is never counted as
+ * spending. Buying it is recorded separately as a normal expense.
+ */
+export interface ShoppingItem extends BaseRecord {
+  name: string;
+  priority: ShoppingPriority;
+  /** The list it belongs to; unset = no list. */
+  listId?: string;
+  currency: CurrencyCode;
+  /** Expected price, optional. */
+  estimate?: Minor;
+  note?: string;
+  /** When to buy it (local date), optional. Used for day / week / month grouping. */
+  dueDate?: LocalDate;
+  /** ISO timestamp when ticked off; unset while still to buy. */
+  boughtAt?: string;
+}
+
 export interface DateRange {
   /** Inclusive. */
   start: LocalDate;
