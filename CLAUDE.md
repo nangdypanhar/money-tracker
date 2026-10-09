@@ -71,6 +71,10 @@ PWA: `src/app/manifest.ts`, PNG icons in `public/` + `src/app/apple-icon.png`, `
 `/sw.js?v=<NEXT_PUBLIC_APP_VERSION>`, set per build in `next.config.ts`). If you add a route, add it to `ROUTES`
 in `public/sw.js` so it works offline. Installing only works over HTTPS.
 
+Releases: the human version lives in `package.json` `"version"` (shown on More as "Version 1.0.0-beta.1 (build …)";
+the build stamp stays because the service worker update relies on it). To release: bump the version, commit,
+tag `v<version>` (annotated), push the commit and the tag. Betas count up: `1.0.0-beta.2`, … then `1.0.0`.
+
 `shadcn init` rewrites `src/app/globals.css` and swaps the font to Geist — if it's ever re-run, restore the
 MoneyTrack theme and Poppins afterwards. `shadcn add <component>` is fine once approved.
 

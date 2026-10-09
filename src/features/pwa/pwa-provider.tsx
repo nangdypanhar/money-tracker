@@ -20,6 +20,7 @@ interface PwaContextValue {
   /** Installing needs HTTPS (or localhost). */
   isSecure: boolean;
   version: string;
+  release: string;
 }
 
 const PwaContext = createContext<PwaContextValue | null>(null);
@@ -31,6 +32,8 @@ export function usePwa() {
 }
 
 const VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
+/** Human release version from package.json, e.g. "1.0.0-beta.1". */
+const RELEASE = process.env.NEXT_PUBLIC_APP_RELEASE ?? "dev";
 
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -89,7 +92,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   }, [promptEvent]);
 
   const value = useMemo<PwaContextValue>(
-    () => ({ canInstall: !!promptEvent, install, ...env, version: VERSION }),
+    () => ({ canInstall: !!promptEvent, install, ...env, version: VERSION, release: RELEASE }),
     [promptEvent, install, env],
   );
 

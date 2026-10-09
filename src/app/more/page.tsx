@@ -204,7 +204,7 @@ export default function MorePage() {
         Your data stays on this device. Nothing is uploaded — export a backup to keep a copy elsewhere.
       </p>
       <p className="text-center text-[10px] text-muted-foreground/70">
-        Version {pwa.version}
+        Version {pwa.release} (build {pwa.version})
         {pwa.isInstalled && " · installed"}
       </p>
       {dialog}
