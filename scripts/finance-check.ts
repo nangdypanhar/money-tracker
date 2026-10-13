@@ -8,6 +8,8 @@ import { parseAmount, formatMoney, toInputString, percentChange, formatAmountInp
 import { normalizeAppSettings } from "@/lib/db/settings";
 import { monthRange, addMonths, addDays, daysInRange, formatDate, formatTime12, parseDateInput, startOfWeek } from "@/lib/finance/dates";
 import { validateBackup } from "@/lib/backup/backup";
+import { mergeBackupData } from "@/lib/backup/merge";
+import { backupReminderDue, daysSince, lastBackupLabel } from "@/lib/backup/reminder";
 import { estimateTotals, groupShoppingItems, isOverdue, shoppingSummary, sortShoppingItems } from "@/lib/finance/shopping";
 import type { GoalEntry, ShoppingItem, Transaction } from "@/lib/finance/types";
 
@@ -130,6 +132,60 @@ assert.equal(validateBackup({ ...v3, data: { ...v3.data, shoppingLists: undefine
 assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: [{ ...item, estimate: 1.5 }] } }).ok, false);
 assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: [{ ...item, priority: "maybe" }] } }).ok, false);
 assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: undefined } }).ok, false);
+
+// Backup merge: union by id, newer updatedAt wins (tie keeps this device), tombstones are updates, local settings kept.
+{
+  const ok = validateBackup(v3);
+  assert.ok(ok.ok);
+  const laptop = ok.backup.data;
+  const at = (iso: string) => ({ createdAt: "2026-01-01T00:00:00Z", updatedAt: iso });
+  const phone = {
+    ...laptop,
+    accounts: [{ ...bank, ...at("2026-10-10T00:00:00Z"), name: "Bank (renamed on phone)" }, { ...cash }],
+    transactions: [
+      { ...tx[0] }, // same, unchanged
+      { ...tx[1], ...at("2025-12-31T00:00:00Z"), amount: 1_00 }, // older edit: laptop keeps its copy
+      { ...tx[2], ...at("2026-10-10T00:00:00Z"), deletedAt: "2026-10-10T00:00:00Z" }, // newer delete wins
+      { ...tx[6], ...at("2026-10-10T00:00:00Z"), deletedAt: undefined }, // newer restore beats an older delete
+      { ...base("p1"), type: "expense" as const, date: "2026-10-09", accountId: "cash", categoryId: "food", amount: 4_00 }, // phone-only
+    ],
+    goalEntries: [],
+    shoppingItems: [{ ...item, ...at("2026-01-01T00:00:00Z"), name: "Same-time edit" }], // tie keeps laptop
+    settings: { ...laptop.settings, currency: "KHR" as const },
+  };
+  const { data: merged, stats } = mergeBackupData(laptop, phone);
+  assert.deepEqual(stats, { added: 1, updated: 3 });
+  const txById = new Map(merged.transactions.map((t) => [t.id, t]));
+  assert.equal(merged.transactions.length, tx.length + 1); // nothing on the laptop is lost
+  assert.equal(merged.accounts.find((a) => a.id === "bank")!.name, "Bank (renamed on phone)");
+  assert.equal((txById.get("e1") as { amount: number }).amount, 30_00);
+  assert.ok(txById.get("e2")!.deletedAt);
+  assert.equal(txById.get("d1")!.deletedAt, undefined);
+  assert.ok(txById.has("p1"));
+  assert.equal(merged.goalEntries.length, entries.length); // missing on the phone ≠ deleted
+  assert.equal(merged.shoppingItems[0].name, "Rice");
+  assert.equal(merged.settings, laptop.settings);
+  // Merging is idempotent and the result is a valid backup.
+  assert.deepEqual(mergeBackupData(merged, phone).stats, { added: 0, updated: 0 });
+  assert.equal(validateBackup({ ...v3, data: merged }).ok, true);
+  // Inputs aren't mutated.
+  assert.equal(laptop.transactions.length, tx.length);
+}
+
+// Backup reminder: only with data, after 7 days or never; labels count whole days.
+{
+  const now = new Date("2026-10-13T12:00:00Z");
+  assert.equal(backupReminderDue(undefined, now, false), false);
+  assert.equal(backupReminderDue(undefined, now, true), true);
+  assert.equal(backupReminderDue("2026-10-07T12:00:01Z", now, true), false); // 6 days, 23:59:59
+  assert.equal(backupReminderDue("2026-10-06T12:00:00Z", now, true), true);
+  assert.equal(backupReminderDue("not a date", now, true), true);
+  assert.equal(daysSince("2026-10-14T00:00:00Z", now), 0); // clock skew never goes negative
+  assert.equal(lastBackupLabel(undefined, now), "never");
+  assert.equal(lastBackupLabel("2026-10-13T01:00:00Z", now), "today");
+  assert.equal(lastBackupLabel("2026-10-12T01:00:00Z", now), "yesterday");
+  assert.equal(lastBackupLabel("2026-10-04T12:00:00Z", now), "9 days ago");
+}
 
 // Shopping list: open items only, per currency; never touches balances or spending.
 const shopping: ShoppingItem[] = [

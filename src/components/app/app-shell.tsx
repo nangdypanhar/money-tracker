@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { DataProvider, useData } from "@/features/data/data-provider";
 import { BalanceVisibilityProvider } from "@/features/privacy/balance-visibility";
 import { PwaProvider } from "@/features/pwa/pwa-provider";
+import { SyncProvider } from "@/features/sync/sync-provider";
 import { LockProvider } from "@/features/security/lock-provider";
 import { TransactionSheetProvider } from "@/features/transactions/transaction-sheet";
 import { BottomNav } from "./bottom-nav";
@@ -13,6 +14,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <PwaProvider>
     <DataProvider>
+      <SyncProvider>
       <BalanceVisibilityProvider>
       <LockProvider>
         <TransactionSheetProvider>
@@ -24,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </TransactionSheetProvider>
       </LockProvider>
       </BalanceVisibilityProvider>
+      </SyncProvider>
       <Toaster position="top-center" />
     </DataProvider>
     </PwaProvider>

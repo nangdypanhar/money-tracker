@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/repositories";
 import { type DataMode, getDataMode } from "@/lib/db/mode";
 import { seedIfNeeded } from "@/lib/db/seed";
+import { requestPersistentStorage } from "@/lib/db/storage";
 import { type AppSettings, DEFAULT_APP_SETTINGS, getSetting, normalizeAppSettings } from "@/lib/db/settings";
 import { CURRENCY_CODES, type CurrencyCode, isCurrencyCode } from "@/lib/money/currency";
 
@@ -127,6 +128,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await seedDemoIfNeeded();
         const loaded = await loadAll();
         if (!cancelled) setData(loaded);
+        // Ask the browser to keep the user's data instead of clearing it when space runs low.
+        if (getDataMode() === "real") void requestPersistentStorage();
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)));
       } finally {

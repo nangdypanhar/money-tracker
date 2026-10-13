@@ -42,6 +42,7 @@ pnpm build       # production build
 pnpm lint        # lint
 pnpm typecheck   # type-check
 pnpm check:finance  # verify money calculations
+pnpm check:sync     # verify cloud backup (engine + encryption)
 ```
 
 The service worker (offline support) is only registered in production builds (`pnpm build && pnpm start`).
@@ -64,6 +65,27 @@ After installing, the app works fully offline. New deployments show **New versio
 Data belongs to the address it was entered on, so move existing data with **Backup & restore** (export on the
 old address, import on the new one).
 
+## Cloud backup (optional, Supabase)
+
+Off by default. When a user turns it on (More → Backup & restore → **Cloud backup**), the app shows what will
+be uploaded, gives them a **recovery key**, and from then on uploads an end-to-end encrypted snapshot whenever
+data changes. The server can't read it. No email sign-up: the recovery key is the login and the decryption key,
+so losing it (together with the device's data) makes the backup unrecoverable.
+
+One-time server setup:
+
+1. Copy `.env.example` to `.env` and set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   (the **publishable** key — never the service-role/secret key). Set the same variables on your host
+   (e.g. Vercel → Settings → Environment Variables) and redeploy.
+2. Supabase → SQL Editor: run `supabase/migrations/0001_cloud_backup.sql`.
+3. Supabase → Authentication → Sign In / Providers → Email: turn **off** "Confirm email".
+4. Optional check: run `supabase/tests/backup_rls.sql` in the SQL editor of a **test** project (it rolls back).
+
+Recovery after browser data is cleared: open the app → More → Backup & restore → **Restore from cloud** → enter
+the recovery key → pick a backup → check the preview → **Replace** (or **Merge**). Uploads are attempted when
+data changes, when the app is hidden or reopened, and when the connection returns — closing the app doesn't
+guarantee the last changes were uploaded; they go up the next time it's open.
+
 ## Architecture
 
 ```
@@ -74,7 +96,8 @@ src/features/       data provider, transaction drawer, PIN lock
 src/lib/money/      money parsing & formatting (integer minor units)
 src/lib/finance/    pure calculations (balances, budgets, goals, reports)
 src/lib/db/         IndexedDB setup, migrations, repositories
-src/lib/backup/     JSON backup/restore, CSV export
+src/lib/backup/     JSON backup, replace or merge import, CSV export
+src/lib/sync/       optional encrypted cloud backup (engine, crypto, Supabase client)
 src/lib/security/   PIN hashing (Web Crypto)
 public/             icon, service worker
 docs/sample-ui/     visual reference for the UI
@@ -114,7 +137,11 @@ Detailed rules live in:
 - **Hide balances** (eye on Home, Accounts, Savings goals): blurs balances and totals; transaction history
   stays visible.
 - **Reports** (Budget → Report): income by category, cash flow, savings rate; **Download** exports the month as CSV.
-- **Backup** (More → Backup & restore): export/import a JSON file. Restoring replaces all data on the device.
+- **Backup** (More → Backup & restore): export/import a JSON file. On import you choose **Merge** (keep both; the newer
+  change wins for the same record) or **Replace** (use only the backup), and can download this device's data first.
+  On phones, **Save to Files or Drive** shares the backup file. Home reminds you when there's been no backup for a
+  week. The app asks the browser to keep its storage, but clearing the browser's site data (on Android this
+  includes the installed app) still deletes it, so keep backups.
 - **Demo / my data** (More → Data): switch between sample data and your own. **Reset demo** restores the
   samples; **Erase all data** (Backup) starts your own data fresh.
 - **Clear cache & reload** (More): loads the newest app version; data is kept. If a device is stuck on an old
@@ -126,4 +153,6 @@ Detailed rules live in:
 
 ## Privacy
 
-Your financial data never leaves your device unless you export a backup yourself.
+Your financial data never leaves your device unless you export a backup yourself or turn on cloud backup,
+which encrypts everything on the device first (AES-256-GCM); the server stores only ciphertext and minimal
+metadata (ids, revision numbers, sizes, timestamps).

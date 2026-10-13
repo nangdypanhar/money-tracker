@@ -7,6 +7,8 @@ import { ACCOUNT_ICONS, GOAL_ICON } from "@/components/finance/category-icon";
 import { CurrencyTag, Delta, EmptyState, Panel, SectionTitle, StackedBar } from "@/components/finance/primitives";
 import { TransactionList } from "@/components/finance/transaction-list";
 import { Button } from "@/components/ui/button";
+import { BackupReminder } from "@/features/backup/backup-reminder";
+import { CloudStatusButton } from "@/features/sync/cloud-status-icon";
 import { useData } from "@/features/data/data-provider";
 import { BalanceToggle, useBalanceVisibility } from "@/features/privacy/balance-visibility";
 import { useMonthSummary } from "@/features/data/use-month-summary";
@@ -44,6 +46,8 @@ export default function HomePage() {
           <p className="text-xs text-muted-foreground">Welcome back</p>
           <h1 className="text-xl font-medium">MoneyTrack</h1>
         </div>
+        <div className="flex items-center gap-2">
+        <CloudStatusButton />
         <button
           type="button"
           aria-label="Add transaction"
@@ -52,7 +56,9 @@ export default function HomePage() {
         >
           <Plus className="size-5" />
         </button>
+        </div>
       </header>
+      <BackupReminder />
 
       <Panel className="flex flex-col gap-4 p-5">
         <div className="-my-3 -mr-3 flex items-center justify-between">

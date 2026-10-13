@@ -5,7 +5,7 @@
 
 import { DB_NAMES, getDataMode } from "./mode";
 
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const STORES = [
   "accounts",
@@ -18,9 +18,30 @@ export const STORES = [
   "shoppingLists",
   "settings",
   "meta",
+  "syncState",
+  "syncKeys",
 ] as const;
 
 export type StoreName = (typeof STORES)[number];
+
+/**
+ * Stores whose contents are in a backup. Every write to one of them bumps `localRevision` in `syncState`
+ * inside the same transaction, so a saved change can never exist without being marked "not backed up yet".
+ */
+export const BACKED_UP_STORES: readonly StoreName[] = [
+  "accounts",
+  "categories",
+  "transactions",
+  "budgets",
+  "goals",
+  "goalEntries",
+  "shoppingItems",
+  "shoppingLists",
+  "settings",
+];
+
+/** The single row in `syncState`. Revisions only ever go up; see .claude/skills/local-data/SKILL.md §6. */
+export const SYNC_STATE_KEY = "state";
 
 type Migration = (db: IDBDatabase, tx: IDBTransaction) => void;
 
@@ -52,6 +73,12 @@ const migrations: Migration[] = [
   // v2 → v3: named shopping lists (new empty store; items without a list stay as they are)
   (db) => {
     db.createObjectStore("shoppingLists", { keyPath: "id" });
+  },
+  // v3 → v4: cloud backup bookkeeping (local revision counter, sync status) and the device's backup keys.
+  // New empty stores; existing data untouched.
+  (db) => {
+    db.createObjectStore("syncState", { keyPath: "key" });
+    db.createObjectStore("syncKeys", { keyPath: "key" });
   },
 ];
 
@@ -141,13 +168,39 @@ export async function withTransaction(
   work: (tx: IDBTransaction) => void,
 ): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(stores, mode);
+  const tracked = mode === "readwrite" && stores.some((s) => BACKED_UP_STORES.includes(s));
+  const scope = tracked && !stores.includes("syncState") ? [...stores, "syncState" as const] : stores;
+  const tx = db.transaction(scope, mode);
   const done = transactionDone(tx);
   try {
     work(tx);
+    if (tracked) bumpLocalRevision(tx);
   } catch (error) {
     tx.abort();
     throw error;
   }
   await done;
+  if (tracked) notifyLocalChange();
+}
+
+/** Increment the local revision inside `tx` (commits or aborts together with the data it marks). */
+function bumpLocalRevision(tx: IDBTransaction): void {
+  const store = tx.objectStore("syncState");
+  const request = store.get(SYNC_STATE_KEY);
+  request.onsuccess = () => {
+    const state = (request.result ?? { key: SYNC_STATE_KEY }) as { localRevision?: number };
+    store.put({ ...state, key: SYNC_STATE_KEY, localRevision: (state.localRevision ?? 0) + 1 });
+  };
+}
+
+const changeListeners = new Set<() => void>();
+
+/** Called after any backed-up data is committed (used to schedule a cloud backup). Returns an unsubscribe. */
+export function onLocalChange(listener: () => void): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
+function notifyLocalChange(): void {
+  for (const listener of changeListeners) listener();
 }

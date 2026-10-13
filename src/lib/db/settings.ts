@@ -87,3 +87,7 @@ export async function getMeta<T>(key: string): Promise<T | undefined> {
   );
   return row?.value;
 }
+
+export async function setMeta<T>(key: string, value: T): Promise<void> {
+  await withTransaction(["meta"], "readwrite", (tx) => tx.objectStore("meta").put({ key, value }));
+}

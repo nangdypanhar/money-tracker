@@ -7,12 +7,12 @@ Instructions for Claude Code (and other AI agents) working in this repository.
 **MoneyTrack** is a mobile-first, local-first personal finance PWA. It covers:
 income, expenses, transfers, budgets, accounts, savings goals, reports, backups, and app security (lock screen).
 
-There is **no backend**. All data lives on the device in IndexedDB. The architecture must stay ready for
-future Google Drive sync, notifications, and stronger local encryption — but **do not implement those
-integrations unless explicitly asked**.
+All data lives on the device in IndexedDB. The only server is an **optional, end-to-end encrypted cloud
+backup** on Supabase that the user turns on themselves; the app is fully usable without it. Notifications and
+at-rest local encryption are **not implemented — don't build them unless explicitly asked**.
 
-> **Status:** v1 is implemented (all features above, local-only, US dollar + Cambodian riel). Google Drive sync,
-> notifications, and at-rest encryption wait for an explicit request.
+> **Status:** v1 is implemented (all features above, US dollar + Cambodian riel) plus optional encrypted cloud
+> backup. Notifications and at-rest encryption wait for an explicit request.
 
 ## Tech stack
 
@@ -41,7 +41,8 @@ integrations unless explicitly asked**.
 5. **Financial correctness first.** Transfers and savings movements are **never** income or expenses.
    Before touching anything that computes money, load the `financial-rules` skill
    (`.claude/skills/financial-rules/SKILL.md`).
-6. **Local-first.** No network calls for core features. The app must fully work offline.
+6. **Local-first.** No network calls for core features; the app must fully work offline. The only network
+   use is the opt-in encrypted cloud backup, which never blocks a local save.
 7. **No speculative integrations.** Leave clean seams (interfaces) for sync, notifications, and encryption,
    but don't build them until asked.
 8. **Don't break user data.** Any IndexedDB schema change needs a versioned migration and must keep backups
@@ -58,10 +59,17 @@ pnpm build       # production build
 pnpm lint        # ESLint
 pnpm typecheck       # tsc --noEmit
 pnpm check:finance   # money-logic invariants (plain Node, no test framework)
+pnpm check:sync      # cloud backup engine + crypto (in-memory fakes)
 ```
 
 Run `typecheck`, `lint`, and `check:finance` before finishing work that touches money logic; extend
-`scripts/finance-check.ts` when you add a rule. A full test runner (e.g. Vitest) needs the user's approval.
+`scripts/finance-check.ts` when you add a rule. Run `check:sync` for anything touching storage writes or cloud
+backup. A full test runner (e.g. Vitest) needs the user's approval.
+
+Cloud backup config: `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key) in `.env`
+(git-ignored; see `.env.example`). Without them the toggle shows "not set up". Server setup: run
+`supabase/migrations/0001_cloud_backup.sql` in the Supabase SQL editor and turn **off** Auth → Email → "Confirm
+email". `supabase/tests/backup_rls.sql` checks RLS on a test project.
 
 Verification builds: `NEXT_DIST_DIR=.next-verify pnpm build` writes to a separate folder so a running
 `pnpm dev` (which uses `.next`) isn't disturbed — a normal `pnpm build` alongside it can break the dev server.
@@ -93,14 +101,18 @@ src/
     transactions/         # add/edit transaction drawer (TransactionSheetProvider)
     security/             # LockProvider + PIN pad
     privacy/              # hide/show balances (eye toggle; localStorage UI preference)
+    backup/               # import choice dialog (merge / replace / export first), Home backup reminder
+    sync/                 # cloud backup: SyncProvider (triggers), panel, enable/restore drawers, status icon
   lib/
     money/                # currency table, integer minor-unit parsing/formatting
     finance/              # domain types, dates, pure calculations (balances, budgets, goals, reports)
     db/                   # IndexedDB open + migrations, generic repository, settings, first-run seed
-    backup/               # JSON backup build/validate/restore, CSV export
+    backup/               # JSON backup build/validate, replace or merge import (merge.ts is pure), CSV export
     security/             # PBKDF2 PIN hashing
+    sync/                 # cloud backup: pure engine, Web Crypto envelope encryption, fetch Supabase client
+supabase/                 # cloud backup SQL migration (tables, RLS, commit_backup) + RLS test script
 public/                   # icon, service worker (sw.js, registered in production only)
-scripts/                  # finance-check.ts + loader so Node can run src TypeScript
+scripts/                  # finance-check.ts, sync-check.ts + loader so Node can run src TypeScript
 docs/sample-ui/           # the sample UI reference
 ```
 
@@ -127,8 +139,8 @@ app/ (routes)  →  features/ + components/  →  lib/finance (pure)  →  lib/m
 
 ### Future-ready seams (interfaces only)
 
-- **Sync:** every record has a UUID `id`, `createdAt`, `updatedAt`, and soft-delete `deletedAt`, so a later
-  Google Drive sync can merge by id/timestamp.
+- **Sync:** every record has a UUID `id`, `createdAt`, `updatedAt`, and soft-delete `deletedAt`; cloud backup
+  is snapshot-based (see `local-data` §6), and a later live sync could merge by id/timestamp.
 - **Encryption:** storage goes through a repository layer so an encrypt/decrypt step can be added
   without rewriting features.
 - **Notifications:** budget/goal events should be computed by pure functions so a notifier can subscribe later.

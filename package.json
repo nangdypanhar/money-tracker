@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check:finance": "node --import ./scripts/register-ts-alias.mjs --no-warnings scripts/finance-check.ts"
+    "check:finance": "node --import ./scripts/register-ts-alias.mjs --no-warnings scripts/finance-check.ts",
+    "check:sync": "node --import ./scripts/register-ts-alias.mjs --no-warnings scripts/sync-check.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

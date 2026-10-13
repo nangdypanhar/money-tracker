@@ -1,6 +1,6 @@
 /**
  * Backup file format and restore. See .claude/skills/local-data/SKILL.md §4.
- * Restore validates everything first and then replaces data in one IndexedDB transaction.
+ * Import validates everything first, then either replaces or merges data in one IndexedDB transaction.
  */
 import {
   accountsRepo,
@@ -16,6 +16,7 @@ import { type AppSettings, getSetting, normalizeAppSettings } from "@/lib/db/set
 import { withTransaction } from "@/lib/db/idb";
 import type { Account, Budget, Category, Goal, GoalEntry, ShoppingItem, ShoppingList, Transaction } from "@/lib/finance/types";
 import { isCurrencyCode } from "@/lib/money/currency";
+import { MERGED_STORES, type MergeStats, mergeBackupData } from "./merge";
 
 /** v2 added `shoppingItems`; v3 added `shoppingLists`. */
 export const BACKUP_SCHEMA_VERSION = 3;
@@ -82,6 +83,27 @@ export function downloadFile(content: string, filename: string, type: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** True when this browser can hand a file to the system share sheet (phones: save to Files, Drive, …). */
+export function canShareFiles(): boolean {
+  if (typeof navigator === "undefined" || !navigator.canShare) return false;
+  try {
+    return navigator.canShare({ files: [new File(["{}"], "test.json", { type: "application/json" })] });
+  } catch {
+    return false;
+  }
+}
+
+/** Open the share sheet with the file. Resolves false if the user closed it without sharing. */
+export async function shareFile(content: string, filename: string, type: string): Promise<boolean> {
+  try {
+    await navigator.share({ files: [new File([content], filename, { type })], title: filename });
+    return true;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return false;
+    throw e;
+  }
 }
 
 export type ValidationResult = { ok: true; backup: BackupFile } | { ok: false; error: string };
@@ -207,10 +229,25 @@ export function validateBackup(json: unknown): ValidationResult {
 
 /** Replace all data with the backup, atomically. The PIN (security setting) is kept. */
 export async function restoreBackup(backup: BackupFile): Promise<void> {
-  const { data } = backup;
-  const stores = ["accounts", "categories", "transactions", "budgets", "goals", "goalEntries", "shoppingItems", "shoppingLists"] as const;
-  await withTransaction([...stores, "settings", "meta"], "readwrite", (tx) => {
-    for (const store of stores) {
+  await writeAllData(backup.data);
+}
+
+/**
+ * Merge the backup into this device's data (see `mergeBackupData`), atomically. The merged result is validated
+ * before anything is written, so a merge that would break references changes nothing.
+ */
+export async function mergeBackup(backup: BackupFile): Promise<MergeStats> {
+  const local = await buildBackup();
+  const { data, stats } = mergeBackupData(local.data, backup.data);
+  const check = validateBackup({ ...local, data });
+  if (!check.ok) throw new Error(`Merge stopped — ${check.error} Nothing was changed.`);
+  await writeAllData(check.backup.data);
+  return stats;
+}
+
+async function writeAllData(data: BackupData): Promise<void> {
+  await withTransaction([...MERGED_STORES, "settings", "meta"], "readwrite", (tx) => {
+    for (const store of MERGED_STORES) {
       const os = tx.objectStore(store);
       os.clear();
       for (const record of data[store]) os.put(record);

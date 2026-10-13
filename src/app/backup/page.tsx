@@ -1,14 +1,18 @@
 "use client";
 
-import { Download, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { Download, Merge, Share2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/app/form";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/features/data/data-provider";
-import { buildBackup, downloadFile, eraseAllData, restoreBackup, validateBackup } from "@/lib/backup/backup";
+import { ImportChoiceDialog, type ImportMode } from "@/features/backup/import-choice-dialog";
+import { CloudBackupPanel } from "@/features/sync/cloud-backup-panel";
+import { type BackupFile, buildBackup, canShareFiles, downloadFile, eraseAllData, mergeBackup, restoreBackup, shareFile, validateBackup } from "@/lib/backup/backup";
+import { lastBackupLabel } from "@/lib/backup/reminder";
+import { getLastBackupAt, getStoragePersistence, setLastBackupAt, type StoragePersistence } from "@/lib/db/storage";
 import { restartApp } from "@/lib/db/mode";
 import { toLocalDate } from "@/lib/finance/dates";
 
@@ -19,18 +23,47 @@ export default function BackupPage() {
   const { confirm, dialog } = useConfirm();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<{ backup: BackupFile; mode: ImportMode } | null>(null);
+  const importMode = useRef<ImportMode>("merge");
 
-  async function exportBackup() {
+  const [lastBackupAt, setLastBackup] = useState<string | undefined>();
+  const [persistence, setPersistence] = useState<StoragePersistence>("unsupported");
+  const [shareSupported, setShareSupported] = useState(false);
+
+  useEffect(() => {
+    void getLastBackupAt().then(setLastBackup).catch(() => {});
+    void getStoragePersistence().then((p) => {
+      setPersistence(p);
+      setShareSupported(canShareFiles());
+    });
+  }, []);
+
+  async function exportBackup(how: "download" | "share" = "download") {
     setBusy(true);
     try {
-      const backup = await buildBackup();
-      downloadFile(JSON.stringify(backup, null, 2), `moneytrack-backup-${toLocalDate(new Date())}.json`, "application/json");
-      toast.success("Backup downloaded");
+      const content = JSON.stringify(await buildBackup(), null, 2);
+      const filename = `moneytrack-backup-${toLocalDate(new Date())}.json`;
+      if (how === "share") {
+        if (!(await shareFile(content, filename, "application/json"))) return;
+      } else {
+        downloadFile(content, filename, "application/json");
+      }
+      if (mode === "real") {
+        const now = new Date().toISOString();
+        await setLastBackupAt(now);
+        setLastBackup(now);
+      }
+      toast.success(how === "share" ? "Backup shared" : "Backup downloaded");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Export failed");
     } finally {
       setBusy(false);
     }
+  }
+
+  function chooseFile(mode: ImportMode) {
+    importMode.current = mode;
+    fileInput.current?.click();
   }
 
   async function importBackup(file: File) {
@@ -44,23 +77,24 @@ export default function BackupPage() {
     const result = validateBackup(parsed);
     if (!result.ok) return toast.error(result.error);
 
-    const { data, exportedAt } = result.backup;
-    const ok = await confirm(
-      "Replace all data?",
-      `This replaces everything on this device with the backup${exportedAt ? ` from ${new Date(exportedAt).toLocaleString()}` : ""} ` +
-        `(${data.transactions.filter((t) => !t.deletedAt).length} transactions, ${data.accounts.filter((a) => !a.deletedAt).length} accounts). ` +
-        "Export a backup first if you want to keep the current data. Your PIN stays the same.",
-      "Replace",
-    );
-    if (!ok) return;
+    setPending({ backup: result.backup, mode: importMode.current });
+  }
 
+  async function applyImport({ backup, mode: how }: { backup: BackupFile; mode: ImportMode }) {
+    setPending(null);
     setBusy(true);
     try {
-      await restoreBackup(result.backup);
-      await refresh();
-      toast.success("Backup restored");
+      if (how === "merge") {
+        const { added, updated } = await mergeBackup(backup);
+        await refresh();
+        toast.success(added + updated === 0 ? "Already up to date — nothing new in that backup" : `Merged: ${added} added, ${updated} updated`);
+      } else {
+        await restoreBackup(backup);
+        await refresh();
+        toast.success("Backup restored");
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Restore failed — nothing was changed.");
+      toast.error(e instanceof Error ? e.message : "Import failed — nothing was changed.");
     } finally {
       setBusy(false);
     }
@@ -89,6 +123,7 @@ export default function BackupPage() {
     <main className="flex flex-col gap-5 px-4">
       <ScreenHeader title="Backup & restore" back className="px-0" />
       {mode === "demo" && <InfoRow>You&apos;re in demo mode — export, restore, and erase here only affect the demo.</InfoRow>}
+      <CloudBackupPanel />
 
       <Panel className="flex flex-col gap-3">
         <SectionTitle>Export</SectionTitle>
@@ -96,15 +131,29 @@ export default function BackupPage() {
           Download all your accounts, transactions, budgets, and goals as a JSON file. Keep it somewhere safe — it isn&apos;t
           encrypted.
         </p>
-        <Button onClick={exportBackup} disabled={busy} className="h-11 rounded-full">
+        <Button onClick={() => exportBackup()} disabled={busy} className="h-11 rounded-full">
           <Download /> Download backup
         </Button>
+        {shareSupported && (
+          <Button variant="outline" onClick={() => exportBackup("share")} disabled={busy} className="h-11 rounded-full">
+            <Share2 /> Save to Files or Drive
+          </Button>
+        )}
+        {mode === "real" && <InfoRow>Last file backup: {lastBackupLabel(lastBackupAt, new Date())}</InfoRow>}
+        {mode === "real" && persistence !== "unsupported" && (
+          <InfoRow>
+            {persistence === "persisted"
+              ? "Storage is protected: the browser won't clear this data on its own."
+              : "This browser may clear app data when space is low — keep a recent backup."}
+          </InfoRow>
+        )}
       </Panel>
 
       <Panel className="flex flex-col gap-3">
-        <SectionTitle>Restore</SectionTitle>
+        <SectionTitle>Import</SectionTitle>
         <p className="text-sm text-muted-foreground">
-          Import a MoneyTrack backup. The file is checked first; if anything is wrong, nothing is changed.
+          Bring in a MoneyTrack backup, for example from your phone. The file is checked first; if anything is wrong,
+          nothing is changed.
         </p>
         <input
           ref={fileInput}
@@ -117,10 +166,14 @@ export default function BackupPage() {
             if (file) void importBackup(file);
           }}
         />
-        <Button variant="outline" onClick={() => fileInput.current?.click()} disabled={busy} className="h-11 rounded-full">
-          <Upload /> Choose backup file
+        <Button variant="outline" onClick={() => chooseFile("merge")} disabled={busy} className="h-11 rounded-full">
+          <Merge /> Merge backup
         </Button>
-        <InfoRow>Restoring replaces the data on this device.</InfoRow>
+        <InfoRow>Merge keeps this device&apos;s data and adds the backup&apos;s. For the same record, the newer change wins.</InfoRow>
+        <Button variant="outline" onClick={() => chooseFile("replace")} disabled={busy} className="h-11 rounded-full">
+          <Upload /> Replace with backup
+        </Button>
+        <InfoRow>Replace deletes this device&apos;s data and keeps only the backup.</InfoRow>
       </Panel>
 
       <Panel className="flex flex-col gap-3 border-expense/30">
@@ -134,6 +187,13 @@ export default function BackupPage() {
         </Button>
       </Panel>
       {dialog}
+      <ImportChoiceDialog
+        pending={pending}
+        busy={busy}
+        onExport={() => exportBackup()}
+        onConfirm={() => pending && void applyImport(pending)}
+        onCancel={() => setPending(null)}
+      />
     </main>
   );
 }
