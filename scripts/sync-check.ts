@@ -72,6 +72,9 @@ class FakeLocal implements SyncLocal {
     return result;
   }
   /** What survives a browser restart: everything in IndexedDB, nothing in memory. */
+  async touch() {
+    this.state = { ...this.state, localRevision: this.state.localRevision + 1 };
+  }
   restart(): FakeLocal {
     const copy = new FakeLocal();
     copy.data = structuredClone(this.data);
@@ -197,6 +200,21 @@ async function decryptLatest(server: FakeServer, deviceId: string, dek: CryptoKe
   assert.deepEqual(await backUpOnce(deps()), { kind: "disabled" });
   assert.equal(server.calls, 0);
   assert.equal(syncStatus(local.state, false), "local-only");
+}
+
+// Data that existed before cloud backup (revision 0) is still uploaded once when backup is turned on,
+// and "Backed up" is never shown before the server confirms.
+{
+  const { local, server, deps, deviceId, dek } = await setup();
+  local.data.transactions.push(expense("old", 900)); // written before revision tracking existed
+  assert.equal(local.state.localRevision, 0);
+  assert.equal(syncStatus(local.state, false), "waiting");
+  assert.deepEqual(await backUpOnce(deps()), { kind: "uploaded", revision: 1 });
+  assert.equal(server.snapshots.size, 1);
+  assert.equal((await decryptLatest(server, deviceId, dek)).data.transactions.length, 1);
+  assert.equal(syncStatus(local.state, false), "backed-up");
+  assert.deepEqual(await backUpOnce(deps()), { kind: "up-to-date" }); // and only once
+  assert.equal(server.snapshots.size, 1);
 }
 
 // Saving while offline: the local write stands, the change stays queued, then uploads when back online.

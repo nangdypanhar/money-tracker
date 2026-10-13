@@ -57,6 +57,8 @@ export interface SyncLocal {
   update(change: (state: SyncState) => SyncState): Promise<SyncState>;
   /** All backed-up data and the revision it was at, read in one consistent transaction. */
   snapshot(): Promise<{ backup: unknown; revision: number }>;
+  /** Bump `localRevision` as if data changed (so the current data gets uploaded). */
+  touch(): Promise<void>;
 }
 
 export interface CommitInput {
@@ -124,7 +126,15 @@ export async function backUpOnce(deps: SyncDeps): Promise<SyncOutcome> {
       await local.update((s) => ({ ...s, blocked: "keys-missing" }));
       return { kind: "blocked", reason: "keys-missing" };
     }
-    if (!hasPendingChanges(state)) return { kind: "up-to-date" };
+    if (!hasPendingChanges(state)) {
+      // Nothing confirmed yet for this backup chain (e.g. data from before cloud backup existed has revision 0):
+      // the current data still has to go up once.
+      if (!state.lastConfirmedAt) {
+        await local.touch();
+        continue;
+      }
+      return { kind: "up-to-date" };
+    }
 
     const { backup, revision } = await local.snapshot();
     const checked = validateBackup(backup);
@@ -199,6 +209,7 @@ export function syncStatus(state: SyncState, running: boolean): SyncStatus {
   if (!state.enabled) return "local-only";
   if (state.blocked) return "recovery-required";
   if (running) return "backing-up";
-  if (!hasPendingChanges(state)) return "backed-up";
+  // "Backed up" only once the server has confirmed a snapshot for this chain.
+  if (!hasPendingChanges(state) && state.lastConfirmedAt) return "backed-up";
   return state.failures > 0 ? "failed" : "waiting";
 }

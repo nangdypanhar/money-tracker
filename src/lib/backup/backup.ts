@@ -16,7 +16,7 @@ import { type AppSettings, getSetting, normalizeAppSettings } from "@/lib/db/set
 import { withTransaction } from "@/lib/db/idb";
 import type { Account, Budget, Category, Goal, GoalEntry, ShoppingItem, ShoppingList, Transaction } from "@/lib/finance/types";
 import { isCurrencyCode } from "@/lib/money/currency";
-import { MERGED_STORES, type MergeStats, mergeBackupData } from "./merge";
+import { type DataChanges, MERGED_STORES, type MergeStats, mergeBackupData, replaceChanges } from "./merge";
 
 /** v2 added `shoppingItems`; v3 added `shoppingLists`. */
 export const BACKUP_SCHEMA_VERSION = 3;
@@ -243,6 +243,28 @@ export async function mergeBackup(backup: BackupFile): Promise<MergeStats> {
   if (!check.ok) throw new Error(`Merge stopped — ${check.error} Nothing was changed.`);
   await writeAllData(check.backup.data);
   return stats;
+}
+
+export interface ImportPreview {
+  /** What "Add these changes" (merge) would do. */
+  merge: DataChanges;
+  /** What "Replace everything" would do. */
+  replace: DataChanges;
+  /** Both sides' accounts and categories, for naming records in the preview. */
+  lookup: { accounts: Account[]; categories: Category[] };
+}
+
+/** Compare a validated backup with this device's data. Nothing is written. */
+export async function previewImport(backup: BackupFile): Promise<ImportPreview> {
+  const local = await buildBackup();
+  return {
+    merge: mergeBackupData(local.data, backup.data).changes,
+    replace: replaceChanges(local.data, backup.data),
+    lookup: {
+      accounts: [...backup.data.accounts, ...local.data.accounts],
+      categories: [...backup.data.categories, ...local.data.categories],
+    },
+  };
 }
 
 async function writeAllData(data: BackupData): Promise<void> {

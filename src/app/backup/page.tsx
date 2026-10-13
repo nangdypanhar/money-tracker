@@ -1,16 +1,16 @@
 "use client";
 
-import { Download, Merge, Share2, Upload } from "lucide-react";
+import { Download, Share2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useConfirm } from "@/components/app/form";
+import { FormDrawer, useConfirm } from "@/components/app/form";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { InfoRow, Panel, SectionTitle } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/features/data/data-provider";
-import { ImportChoiceDialog, type ImportMode } from "@/features/backup/import-choice-dialog";
+import { backupDate, changesMessage, ImportPreviewBody, type ImportMode } from "@/features/backup/import-preview";
 import { CloudBackupPanel } from "@/features/sync/cloud-backup-panel";
-import { type BackupFile, buildBackup, canShareFiles, downloadFile, eraseAllData, mergeBackup, restoreBackup, shareFile, validateBackup } from "@/lib/backup/backup";
+import { type BackupFile, buildBackup, canShareFiles, downloadFile, eraseAllData, type ImportPreview, mergeBackup, previewImport, restoreBackup, shareFile, validateBackup } from "@/lib/backup/backup";
 import { lastBackupLabel } from "@/lib/backup/reminder";
 import { getLastBackupAt, getStoragePersistence, setLastBackupAt, type StoragePersistence } from "@/lib/db/storage";
 import { restartApp } from "@/lib/db/mode";
@@ -23,8 +23,7 @@ export default function BackupPage() {
   const { confirm, dialog } = useConfirm();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<{ backup: BackupFile; mode: ImportMode } | null>(null);
-  const importMode = useRef<ImportMode>("merge");
+  const [pending, setPending] = useState<{ backup: BackupFile; preview: ImportPreview } | null>(null);
 
   const [lastBackupAt, setLastBackup] = useState<string | undefined>();
   const [persistence, setPersistence] = useState<StoragePersistence>("unsupported");
@@ -61,11 +60,6 @@ export default function BackupPage() {
     }
   }
 
-  function chooseFile(mode: ImportMode) {
-    importMode.current = mode;
-    fileInput.current?.click();
-  }
-
   async function importBackup(file: File) {
     if (file.size > MAX_BACKUP_BYTES) return toast.error("That file is too large to be a MoneyTrack backup.");
     let parsed: unknown;
@@ -77,22 +71,24 @@ export default function BackupPage() {
     const result = validateBackup(parsed);
     if (!result.ok) return toast.error(result.error);
 
-    setPending({ backup: result.backup, mode: importMode.current });
+    try {
+      setPending({ backup: result.backup, preview: await previewImport(result.backup) });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't read this device's data to compare.");
+    }
   }
 
-  async function applyImport({ backup, mode: how }: { backup: BackupFile; mode: ImportMode }) {
-    setPending(null);
+  async function applyImport(backup: BackupFile, how: ImportMode) {
     setBusy(true);
     try {
       if (how === "merge") {
-        const { added, updated } = await mergeBackup(backup);
-        await refresh();
-        toast.success(added + updated === 0 ? "Already up to date — nothing new in that backup" : `Merged: ${added} added, ${updated} updated`);
+        toast.success(changesMessage(await mergeBackup(backup)));
       } else {
         await restoreBackup(backup);
-        await refresh();
         toast.success("Backup restored");
       }
+      await refresh();
+      setPending(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Import failed — nothing was changed.");
     } finally {
@@ -166,14 +162,10 @@ export default function BackupPage() {
             if (file) void importBackup(file);
           }}
         />
-        <Button variant="outline" onClick={() => chooseFile("merge")} disabled={busy} className="h-11 rounded-full">
-          <Merge /> Merge backup
+        <Button variant="outline" onClick={() => fileInput.current?.click()} disabled={busy} className="h-11 rounded-full">
+          <Upload /> Import backup file
         </Button>
-        <InfoRow>Merge keeps this device&apos;s data and adds the backup&apos;s. For the same record, the newer change wins.</InfoRow>
-        <Button variant="outline" onClick={() => chooseFile("replace")} disabled={busy} className="h-11 rounded-full">
-          <Upload /> Replace with backup
-        </Button>
-        <InfoRow>Replace deletes this device&apos;s data and keeps only the backup.</InfoRow>
+        <InfoRow>You&apos;ll see exactly what it adds or changes before anything is saved.</InfoRow>
       </Panel>
 
       <Panel className="flex flex-col gap-3 border-expense/30">
@@ -187,13 +179,18 @@ export default function BackupPage() {
         </Button>
       </Panel>
       {dialog}
-      <ImportChoiceDialog
-        pending={pending}
-        busy={busy}
-        onExport={() => exportBackup()}
-        onConfirm={() => pending && void applyImport(pending)}
-        onCancel={() => setPending(null)}
-      />
+      <FormDrawer open={!!pending} onOpenChange={(open) => !open && !busy && setPending(null)} title="Import backup">
+        {pending && (
+          <ImportPreviewBody
+            preview={pending.preview}
+            sourceLabel={`Backup file${pending.backup.exportedAt ? ` from ${backupDate(pending.backup.exportedAt)}` : ""}`}
+            busy={busy}
+            onApply={(how) => void applyImport(pending.backup, how)}
+            onExport={() => exportBackup()}
+            onCancel={() => setPending(null)}
+          />
+        )}
+      </FormDrawer>
     </main>
   );
 }

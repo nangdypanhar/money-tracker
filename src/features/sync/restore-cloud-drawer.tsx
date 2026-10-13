@@ -1,30 +1,24 @@
 "use client";
 
-import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { FormDrawer } from "@/components/app/form";
-import { InfoRow, Segmented } from "@/components/finance/primitives";
+import { InfoRow } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useData } from "@/features/data/data-provider";
-import { type BackupFile, buildBackup, downloadFile, mergeBackup, restoreBackup } from "@/lib/backup/backup";
-import { formatDate, formatTime12, toLocalDate, toLocalTime } from "@/lib/finance/dates";
+import { backupDate, changesMessage, ImportPreviewBody, type ImportMode } from "@/features/backup/import-preview";
+import { type BackupFile, buildBackup, downloadFile, type ImportPreview, mergeBackup, previewImport, restoreBackup } from "@/lib/backup/backup";
+import { toLocalDate } from "@/lib/finance/dates";
 import type { SnapshotInfo } from "@/lib/sync/supabase";
 import { type CloudVault, continueWithVault, downloadCloudBackup, openCloudVault } from "./cloud";
 import { useSync } from "./sync-provider";
 
-const live = <T extends { deletedAt?: string }>(rows: T[]) => rows.filter((r) => !r.deletedAt).length;
-
-function when(iso: string) {
-  const d = new Date(iso);
-  return `${formatDate(toLocalDate(d))}, ${formatTime12(toLocalTime(d))}`;
-}
-
 /**
  * Restore from the cloud with a recovery key: sign in, pick a backup, decrypt + validate, preview, then the
- * user chooses Replace or Merge. Nothing on this device changes until then. With `reconnectOnly`, it just
- * reconnects this device (keys missing / conflict) without touching local data.
+ * user chooses Replace or Merge. Nothing on this device changes until then. A restore is a one-time copy: it never
+ * connects this device to that backup. With `reconnectOnly`, it reconnects this device to *its own* backup
+ * (keys missing / conflict) without touching local data.
  */
 export function RestoreCloudDrawer({
   open,
@@ -39,8 +33,7 @@ export function RestoreCloudDrawer({
   const { state, reload, backUpNow } = useSync();
   const [key, setKey] = useState("");
   const [vault, setVault] = useState<CloudVault | null>(null);
-  const [preview, setPreview] = useState<{ snapshot: SnapshotInfo; backup: BackupFile } | null>(null);
-  const [keepBackingUp, setKeepBackingUp] = useState("yes");
+  const [preview, setPreview] = useState<{ snapshot: SnapshotInfo; backup: BackupFile; changes: ImportPreview } | null>(null);
   const [busy, setBusy] = useState(false);
 
   function close(next: boolean) {
@@ -65,10 +58,17 @@ export function RestoreCloudDrawer({
 
   const unlock = () => step(async () => setVault(await openCloudVault(key)));
   const choose = (snapshot: SnapshotInfo) =>
-    step(async () => setPreview({ snapshot, backup: await downloadCloudBackup(vault!, snapshot) }));
+    step(async () => {
+      const backup = await downloadCloudBackup(vault!, snapshot);
+      setPreview({ snapshot, backup, changes: await previewImport(backup) });
+    });
 
   async function reconnect() {
     await step(async () => {
+      // Only this device's own backup: a key for another backup can restore data, never take over backing up.
+      if (state?.userId && state.userId !== vault!.userId) {
+        throw new Error("That recovery key belongs to a different cloud backup than this device's.");
+      }
       await continueWithVault(vault!);
       await reload();
       close(false);
@@ -84,25 +84,22 @@ export function RestoreCloudDrawer({
     });
   }
 
-  async function apply(how: "merge" | "replace") {
+  async function apply(how: ImportMode) {
     await step(async () => {
       if (how === "merge") {
-        const { added, updated } = await mergeBackup(preview!.backup);
-        toast.success(`Merged: ${added} added, ${updated} updated`);
+        toast.success(changesMessage(await mergeBackup(preview!.backup)));
       } else {
         await restoreBackup(preview!.backup);
         toast.success("Backup restored");
       }
-      if (keepBackingUp === "yes" && !(state?.enabled && state.userId === vault!.userId)) await continueWithVault(vault!);
+      // A one-time copy: this device is not connected to that cloud backup, and nothing is uploaded to it.
+      // (If this device has its own cloud backup on, the restored data is backed up there as usual.)
       await refresh();
-      await reload();
       close(false);
-      if (keepBackingUp === "yes") void backUpNow();
     });
   }
 
   const thisDevice = state?.deviceId;
-  const data = preview?.backup.data;
 
   return (
     <FormDrawer open={open} onOpenChange={close} title={reconnectOnly ? "Reconnect cloud backup" : "Restore from cloud"}>
@@ -162,7 +159,7 @@ export function RestoreCloudDrawer({
                       onClick={() => void choose(s)}
                       className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border bg-background/40 px-4 py-2.5 text-left text-sm hover:bg-accent disabled:opacity-60"
                     >
-                      <span>{when(s.createdAt)}</span>
+                      <span>{backupDate(s.createdAt)}</span>
                       <span className="text-xs text-muted-foreground">
                         {s.deviceId === thisDevice ? "This device" : "Device …" + s.deviceId.slice(-4)}
                       </span>
@@ -175,42 +172,17 @@ export function RestoreCloudDrawer({
         </div>
       )}
 
-      {preview && data && (
+      {preview && (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
-            Backup from {when(preview.snapshot.createdAt)} — decrypted and checked. It has:
-          </p>
-          <ul className="grid grid-cols-2 gap-2 text-sm">
-            {[
-              ["Transactions", live(data.transactions)],
-              ["Accounts", live(data.accounts)],
-              ["Budgets", live(data.budgets)],
-              ["Goals", live(data.goals)],
-            ].map(([label, count]) => (
-              <li key={label} className="rounded-2xl border bg-background/40 px-4 py-2.5">
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className="text-lg font-medium tabular-nums">{count}</p>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-muted-foreground">Keep backing up this device to this cloud backup?</p>
-            <Segmented value={keepBackingUp} onChange={setKeepBackingUp} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
-          </div>
-          <Button variant="outline" onClick={exportFirst} disabled={busy} className="h-11 rounded-full">
-            <Download /> Download this device&apos;s data first
-          </Button>
-          <InfoRow>Merge keeps this device&apos;s data and adds the backup&apos;s; for the same record, the newer change wins.</InfoRow>
-          <Button onClick={() => void apply("merge")} disabled={busy} className="h-11 rounded-full">
-            Merge
-          </Button>
-          <InfoRow>Replace deletes this device&apos;s data and keeps only the backup.</InfoRow>
-          <Button variant="destructive" onClick={() => void apply("replace")} disabled={busy} className="h-11 rounded-full">
-            Replace
-          </Button>
-          <Button variant="outline" onClick={() => setPreview(null)} disabled={busy} className="h-11 rounded-full">
-            Back
-          </Button>
+          <InfoRow>One-time copy: this device won&apos;t be connected to that cloud backup or upload to it.</InfoRow>
+          <ImportPreviewBody
+            preview={preview.changes}
+            sourceLabel={`Cloud backup from ${backupDate(preview.snapshot.createdAt)}, decrypted and checked`}
+            busy={busy}
+            onApply={(how) => void apply(how)}
+            onExport={() => void exportFirst()}
+            onCancel={() => setPreview(null)}
+          />
         </div>
       )}
     </FormDrawer>

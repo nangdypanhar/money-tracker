@@ -101,7 +101,7 @@ src/
     transactions/         # add/edit transaction drawer (TransactionSheetProvider)
     security/             # LockProvider + PIN pad
     privacy/              # hide/show balances (eye toggle; localStorage UI preference)
-    backup/               # import choice dialog (merge / replace / export first), Home backup reminder
+    backup/               # import preview (what changes: add / replace / export first), Home backup reminder
     sync/                 # cloud backup: SyncProvider (triggers), panel, enable/restore drawers, status icon
   lib/
     money/                # currency table, integer minor-unit parsing/formatting

@@ -63,7 +63,19 @@ export async function readSnapshot(): Promise<{ backup: BackupFile; revision: nu
   };
 }
 
-export const idbSyncLocal: SyncLocal = { read: readSyncState, update: updateSyncState, snapshot: readSnapshot };
+/** Mark the current data as changed (not backed up yet) without changing any data. */
+export async function touchLocalRevision(): Promise<void> {
+  await withTransaction(["syncState"], "readwrite", (tx) => {
+    const store = tx.objectStore("syncState");
+    const request = store.get(SYNC_STATE_KEY);
+    request.onsuccess = () => {
+      const current = normalizeSyncState(request.result);
+      store.put({ ...current, key: SYNC_STATE_KEY, localRevision: current.localRevision + 1 });
+    };
+  });
+}
+
+export const idbSyncLocal: SyncLocal = { read: readSyncState, update: updateSyncState, snapshot: readSnapshot, touch: touchLocalRevision };
 
 export async function getDeviceKeys(): Promise<DeviceKeys | null> {
   const db = await openDb();

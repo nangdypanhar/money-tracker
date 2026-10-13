@@ -82,7 +82,9 @@ One-time server setup:
 4. Optional check: run `supabase/tests/backup_rls.sql` in the SQL editor of a **test** project (it rolls back).
 
 Recovery after browser data is cleared: open the app → More → Backup & restore → **Restore from cloud** → enter
-the recovery key → pick a backup → check the preview → **Replace** (or **Merge**). Uploads are attempted when
+the recovery key → pick a backup → check the preview → **Replace** (or **Merge**). A restore is a one-time copy:
+it doesn't connect the device to that backup. To back up the device again, turn on Cloud backup there (it gets its
+own recovery key). Uploads are attempted when
 data changes, when the app is hidden or reopened, and when the connection returns — closing the app doesn't
 guarantee the last changes were uploaded; they go up the next time it's open.
 
@@ -137,8 +139,10 @@ Detailed rules live in:
 - **Hide balances** (eye on Home, Accounts, Savings goals): blurs balances and totals; transaction history
   stays visible.
 - **Reports** (Budget → Report): income by category, cash flow, savings rate; **Download** exports the month as CSV.
-- **Backup** (More → Backup & restore): export/import a JSON file. On import you choose **Merge** (keep both; the newer
-  change wins for the same record) or **Replace** (use only the backup), and can download this device's data first.
+- **Backup** (More → Backup & restore): export/import a JSON file. Importing first shows exactly what it would add,
+  change, or remove (or "Already up to date"); **Add these changes** merges it (the newer change wins for the same
+  record), and **Replace everything instead…** makes the device match the backup. You can download this device's
+  data first.
   On phones, **Save to Files or Drive** shares the backup file. Home reminds you when there's been no backup for a
   week. The app asks the browser to keep its storage, but clearing the browser's site data (on Android this
   includes the installed app) still deletes it, so keep backups.

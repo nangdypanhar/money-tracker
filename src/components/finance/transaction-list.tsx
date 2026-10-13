@@ -1,9 +1,10 @@
 "use client";
 
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Equal } from "lucide-react";
+import { createContext, useContext } from "react";
 import { useData } from "@/features/data/data-provider";
 import { formatDate, formatTime12, toLocalDate } from "@/lib/finance/dates";
-import type { Transaction } from "@/lib/finance/types";
+import type { Account, Category, Transaction } from "@/lib/finance/types";
 import { formatMoney } from "@/lib/money/money";
 import type { CurrencyCode } from "@/lib/money/currency";
 import { cn } from "@/lib/utils";
@@ -18,8 +19,21 @@ interface RowView {
   amountClass: string;
 }
 
+interface Lookup {
+  accountById: Map<string, Account>;
+  categoryById: Map<string, Category>;
+}
+
+const LookupContext = createContext<Lookup | null>(null);
+
+/** Name accounts/categories from other data (e.g. a backup being previewed) instead of this device's. */
+export function TransactionLookupProvider({ value, children }: { value: Lookup; children: React.ReactNode }) {
+  return <LookupContext.Provider value={value}>{children}</LookupContext.Provider>;
+}
+
 function useRowView(t: Transaction): RowView {
-  const { accountById, categoryById } = useData();
+  const data = useData();
+  const { accountById, categoryById } = useContext(LookupContext) ?? data;
   const accountName = (id: string) => accountById.get(id)?.name ?? "Deleted account";
   const currencyOf = (id: string): CurrencyCode => accountById.get(id)?.currency ?? "USD";
 

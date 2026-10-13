@@ -8,7 +8,7 @@ import { parseAmount, formatMoney, toInputString, percentChange, formatAmountInp
 import { normalizeAppSettings } from "@/lib/db/settings";
 import { monthRange, addMonths, addDays, daysInRange, formatDate, formatTime12, parseDateInput, startOfWeek } from "@/lib/finance/dates";
 import { validateBackup } from "@/lib/backup/backup";
-import { mergeBackupData } from "@/lib/backup/merge";
+import { mergeBackupData, replaceChanges, sameContent } from "@/lib/backup/merge";
 import { backupReminderDue, daysSince, lastBackupLabel } from "@/lib/backup/reminder";
 import { estimateTotals, groupShoppingItems, isOverdue, shoppingSummary, sortShoppingItems } from "@/lib/finance/shopping";
 import type { GoalEntry, ShoppingItem, Transaction } from "@/lib/finance/types";
@@ -154,7 +154,8 @@ assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: undefine
     settings: { ...laptop.settings, currency: "KHR" as const },
   };
   const { data: merged, stats } = mergeBackupData(laptop, phone);
-  assert.deepEqual(stats, { added: 1, updated: 3 });
+  // Visible changes only: rename (updated), newer delete (removed), restore + phone-only record (added).
+  assert.deepEqual(stats, { added: 2, updated: 1, removed: 1 });
   const txById = new Map(merged.transactions.map((t) => [t.id, t]));
   assert.equal(merged.transactions.length, tx.length + 1); // nothing on the laptop is lost
   assert.equal(merged.accounts.find((a) => a.id === "bank")!.name, "Bank (renamed on phone)");
@@ -166,10 +167,51 @@ assert.equal(validateBackup({ ...v2, data: { ...v2.data, shoppingItems: undefine
   assert.equal(merged.shoppingItems[0].name, "Rice");
   assert.equal(merged.settings, laptop.settings);
   // Merging is idempotent and the result is a valid backup.
-  assert.deepEqual(mergeBackupData(merged, phone).stats, { added: 0, updated: 0 });
+  assert.deepEqual(mergeBackupData(merged, phone).stats, { added: 0, updated: 0, removed: 0 });
   assert.equal(validateBackup({ ...v3, data: merged }).ok, true);
   // Inputs aren't mutated.
   assert.equal(laptop.transactions.length, tx.length);
+}
+
+// Import preview: only real differences count; timestamps and hidden deletes are noise.
+{
+  const ok = validateBackup(v3);
+  assert.ok(ok.ok);
+  const mine = ok.backup.data;
+  const later = { updatedAt: "2026-10-12T00:00:00Z", createdAt: "2026-10-12T00:00:00Z" };
+  // Same data exported later from another device: nothing to add, and this device keeps its own copies.
+  const sameButNewer = { ...mine, accounts: mine.accounts.map((a) => ({ ...a, ...later })), transactions: mine.transactions.map((t) => ({ ...t, ...later })) };
+  const same = mergeBackupData(mine, sameButNewer);
+  assert.deepEqual(same.stats, { added: 0, updated: 0, removed: 0 });
+  assert.equal(same.data.accounts.find((a) => a.id === "bank")!.updatedAt, mine.accounts.find((a) => a.id === "bank")!.updatedAt);
+  assert.equal(sameContent({ a: 1, b: undefined, updatedAt: "x" }, { a: 1, updatedAt: "y" }), true);
+  assert.equal(sameContent({ a: [1, 2] }, { a: [2, 1] }), false);
+  // A record created and deleted on the other device: merged (keeps the delete), but not shown as "added".
+  const ghost = { ...base("ghost"), type: "expense" as const, date: "2026-10-01", accountId: "bank", categoryId: "food", amount: 1_00, deletedAt: "2026-10-02T00:00:00Z" };
+  const withGhost = mergeBackupData(mine, { ...mine, transactions: [...mine.transactions, ghost] });
+  assert.deepEqual(withGhost.stats, { added: 0, updated: 0, removed: 0 });
+  assert.ok(withGhost.data.transactions.some((t) => t.id === "ghost"));
+  // The preview lists the records themselves.
+  const fresh = { ...base("new1"), type: "expense" as const, date: "2026-10-09", accountId: "cash", categoryId: "food", amount: 7_00 };
+  const preview = mergeBackupData(mine, { ...mine, transactions: [...mine.transactions, fresh] }).changes;
+  assert.deepEqual(preview.transactions.added.map((t) => t.id), ["new1"]);
+  assert.equal(preview.accounts.added.length, 0);
+  // Replace preview: added / changed / removed among live records.
+  const theirs = {
+    ...mine,
+    transactions: [
+      fresh,
+      { ...tx[0], ...later }, // same content → not a change
+      { ...tx[1], ...later, amount: 31_00 }, // changed
+      { ...tx[2], ...later, deletedAt: "2026-10-12T00:00:00Z" }, // deleted there → removed here
+    ],
+  };
+  const rc = replaceChanges(mine, theirs);
+  assert.deepEqual(rc.transactions.added.map((t) => t.id), ["new1"]);
+  assert.deepEqual(rc.transactions.updated.map((u) => u.after.id), ["e1"]);
+  const liveMine = mine.transactions.filter((t) => !t.deletedAt).map((t) => t.id);
+  assert.deepEqual(rc.transactions.removed.map((t) => t.id).sort(), liveMine.filter((id) => id !== "i1" && id !== "e1").sort());
+  assert.deepEqual(replaceChanges(mine, mine).transactions, { added: [], updated: [], removed: [] });
 }
 
 // Backup reminder: only with data, after 7 days or never; labels count whole days.

@@ -75,8 +75,16 @@ supported — no extra packages).
 - **Import must validate** before writing: correct `app`, known `schemaVersion` (upgrade older versions
   step by step; reject newer ones with a clear message), required fields, integer amounts, referential
   integrity (transactions point to existing accounts/categories).
-- After validation the user **chooses** in `ImportChoiceDialog` (`features/backup`): **Merge**, **Replace**, or
-  Cancel, with a "Download this device's data first" button. Never import without that choice.
+- After validation, `previewImport` compares the backup with this device and `ImportPreviewBody`
+  (`features/backup/import-preview.tsx`, used for files and cloud restores) shows **what would change** before
+  anything is written: a per-type summary ("+3 new · 1 changed · 1 removed") and the new / changed / removed
+  transactions as normal rows. Nothing to add → "Already up to date". Main action **Add these changes** (merge);
+  **Replace everything instead…** is secondary and previews what it removes (`replaceChanges`). Always offers
+  "Download this device's data first". Never import without the user confirming a preview.
+- Only **visible** changes count (`mergeBackupData` / `replaceChanges` in `lib/backup/merge.ts`): records equal
+  apart from `createdAt`/`updatedAt`/`deletedAt` are unchanged (merge keeps this device's copy), and a deleted
+  record that was never live here is merged silently (keeps the delete) but isn't "added". Toast counts come from
+  the same numbers.
 - **Replace** (`restoreBackup`): clear + write every store in one transaction.
 - **Merge** (`mergeBackup` → pure `mergeBackupData` in `lib/backup/merge.ts`):
   - Match records by `id` in every data store. A record on only one side is kept, so nothing is lost.
@@ -153,8 +161,11 @@ IndexedDB adapter), `features/sync/` (provider, panel, drawers), SQL in `supabas
   check, retention = newest 10 + newest per day for 30 days) and deleted via `delete_my_backups`. Only the
   publishable/anon key is in the client; never the service-role key.
 - **Recovery:** Restore from cloud → recovery key → sign in → unwrap DEK → list snapshots → download, verify
-  SHA-256, decrypt, `validateBackup` → preview counts → user picks Replace or Merge (never automatic). The device
-  then starts a **new** device chain (new `deviceId`) so revisions never collide.
+  SHA-256, decrypt, `validateBackup` → preview counts → user picks Replace or Merge (never automatic). A restore
+  is a **one-time copy**: it never connects this device to that backup and never uploads to it; the key and login
+  are used in memory only. A device backs up only under its own recovery key (from turning cloud backup on).
+  "Reconnect" (shown only when this device's own backup is blocked) starts a new device chain and refuses a key
+  for a different backup (`userId` must match).
 - **Demo mode never syncs.** Erase all data doesn't reset `syncState` (an erase is a change to back up).
 - Tests: `pnpm check:sync` (engine + crypto with in-memory fakes); `supabase/tests/backup_rls.sql` (RLS, run on a
   test project). Extend both when the rules change.
